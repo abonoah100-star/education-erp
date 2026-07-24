@@ -23,9 +23,14 @@ export class IssueSmartCardDto {
   @Length(2, 120)
   ownerName!: string;
 
+  @IsOptional()
   @IsString()
   @Length(2, 80)
-  subjectId!: string;
+  subjectId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  portraitAssetId?: string;
 
   @IsOptional()
   @IsEnum(CardCodeFormat)
@@ -50,9 +55,14 @@ export class AssignInventoryCardDto {
   @Length(2, 120)
   ownerName!: string;
 
+  @IsOptional()
   @IsString()
   @Length(2, 80)
-  subjectId!: string;
+  subjectId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  portraitAssetId?: string;
 
   @IsOptional()
   @IsDateString()

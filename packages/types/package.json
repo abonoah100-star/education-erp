@@ -1,1 +1,16 @@
-{"name":"@education-erp/types","version":"1.0.0","private":true,"type":"module","exports":"./src/index.ts","scripts":{"build":"tsc --noEmit","lint":"tsc --noEmit","typecheck":"tsc --noEmit","test":"node --test"},"devDependencies":{"typescript":"5.9.2"}}
+{
+  "name": "@education-erp/types",
+  "version": "2.4.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}

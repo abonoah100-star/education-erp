@@ -1,10 +1,14 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CashboxStatus, Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { AuditService } from '../../core/audit/audit.service';
 import type { RequestUser } from '../../core/authz/request-user';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { toPrismaBytes } from '../smart-cards/prisma-bytes';
 import type { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
 import type { CreateCashboxDto } from './dto/cashbox.dto';
+import type { UpdateOrganizationSettingsDto } from './dto/organization-settings.dto';
 
 @Injectable()
 export class WorkspaceService {
@@ -252,6 +256,146 @@ export class WorkspaceService {
       ipAddress,
     });
     return { ...cashbox, balance: Number(cashbox.balance) };
+  }
+
+  async organizationSettings(user: RequestUser) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: user.organizationId },
+      select: {
+        id: true,
+        name: true,
+        systemName: true,
+        cardSubtitle: true,
+        cardBackTitle: true,
+        cardBackInstruction: true,
+        cardBackFooter: true,
+        code: true,
+        brandAsset: { select: { updatedAt: true } },
+      },
+    });
+    if (!organization) throw new NotFoundException('بيانات المؤسسة غير موجودة');
+    return this.serializeOrganizationSettings(organization);
+  }
+
+  async updateOrganizationSettings(
+    user: RequestUser,
+    dto: UpdateOrganizationSettingsDto,
+    ipAddress?: string,
+  ) {
+    const organization = await this.prisma.organization.update({
+      where: { id: user.organizationId },
+      data: {
+        name: dto.name.trim(),
+        systemName: dto.systemName.trim(),
+        cardSubtitle: dto.cardSubtitle?.trim() || null,
+        cardBackTitle: dto.cardBackTitle?.trim() || null,
+        cardBackInstruction: dto.cardBackInstruction?.trim() || null,
+        cardBackFooter: dto.cardBackFooter?.trim() || null,
+      },
+      select: {
+        id: true,
+        name: true,
+        systemName: true,
+        cardSubtitle: true,
+        cardBackTitle: true,
+        cardBackInstruction: true,
+        cardBackFooter: true,
+        code: true,
+        brandAsset: { select: { updatedAt: true } },
+      },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      action: 'organization.settings.update',
+      entityType: 'Organization',
+      entityId: organization.id,
+      metadata: { name: organization.name, systemName: organization.systemName },
+      ipAddress,
+    });
+    return this.serializeOrganizationSettings(organization);
+  }
+
+  async updateOrganizationLogo(
+    user: RequestUser,
+    file: Express.Multer.File,
+    ipAddress?: string,
+  ) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      throw new BadRequestException('صيغة اللوجو يجب أن تكون JPG أو PNG أو WebP');
+    }
+    const content = await sharp(file.buffer)
+      .rotate()
+      .resize(900, 900, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toBuffer();
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    await this.prisma.organizationBrandAsset.upsert({
+      where: { organizationId: user.organizationId },
+      create: {
+        organizationId: user.organizationId,
+        mimeType: 'image/png',
+        byteSize: content.byteLength,
+        sha256,
+        content: toPrismaBytes(content),
+      },
+      update: {
+        mimeType: 'image/png',
+        byteSize: content.byteLength,
+        sha256,
+        content: toPrismaBytes(content),
+      },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      action: 'organization.logo.update',
+      entityType: 'Organization',
+      entityId: user.organizationId,
+      metadata: { sha256, byteSize: content.byteLength },
+      ipAddress,
+    });
+    return this.organizationSettings(user);
+  }
+
+  async deleteOrganizationLogo(user: RequestUser, ipAddress?: string) {
+    await this.prisma.organizationBrandAsset.deleteMany({
+      where: { organizationId: user.organizationId },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      action: 'organization.logo.reset',
+      entityType: 'Organization',
+      entityId: user.organizationId,
+      ipAddress,
+    });
+    return this.organizationSettings(user);
+  }
+
+  private serializeOrganizationSettings(organization: {
+    id: string;
+    name: string;
+    systemName: string;
+    cardSubtitle: string | null;
+    cardBackTitle: string | null;
+    cardBackInstruction: string | null;
+    cardBackFooter: string | null;
+    code: string;
+    brandAsset: { updatedAt: Date } | null;
+  }) {
+    return {
+      id: organization.id,
+      name: organization.name,
+      systemName: organization.systemName,
+      cardSubtitle: organization.cardSubtitle,
+      cardBackTitle: organization.cardBackTitle,
+      cardBackInstruction: organization.cardBackInstruction,
+      cardBackFooter: organization.cardBackFooter,
+      code: organization.code,
+      hasCustomLogo: Boolean(organization.brandAsset),
+      logoUrl: `/api/branding/logo?v=${organization.brandAsset?.updatedAt.getTime() ?? 'default'}`,
+    };
   }
 
   private branchWhere(user: RequestUser): Prisma.BranchWhereInput {

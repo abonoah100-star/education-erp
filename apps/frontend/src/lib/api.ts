@@ -61,3 +61,25 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+export async function requestFormData<T>(path: string, formData: FormData): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ErrorPayload | null;
+    const rawMessage = payload?.message ?? 'تعذر رفع الصورة';
+    throw new ApiError(
+      Array.isArray(rawMessage) ? rawMessage.join('، ') : rawMessage,
+      response.status,
+      payload?.requestId,
+    );
+  }
+  return response.json() as Promise<T>;
+}

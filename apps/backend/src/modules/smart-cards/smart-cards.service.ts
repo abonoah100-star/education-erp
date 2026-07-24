@@ -8,10 +8,11 @@ import {
   CardEventType,
   CardPrintLayout,
   CardPrintStatus,
+  CardType,
   Prisma,
   SmartCardStatus,
 } from '@prisma/client';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AuditService } from '../../core/audit/audit.service';
 import type { RequestUser } from '../../core/authz/request-user';
 import { PrismaService } from '../../core/prisma/prisma.service';
@@ -25,12 +26,14 @@ import type { CreatePrintJobDto } from './dto/print-job.dto';
 import type { CreateCardTemplateDto } from './dto/template.dto';
 import {
   CardRendererService,
+  type CardSelection,
   type CardSide,
   type CodeImageKind,
   type ImageFormat,
   type RenderCardInput,
 } from './card-renderer.service';
 import { CardSigningService } from './card-signing.service';
+import { toPrismaBytes } from './prisma-bytes';
 
 const cardSafeSelect = {
   id: true,
@@ -40,6 +43,7 @@ const cardSafeSelect = {
   cardType: true,
   subjectId: true,
   ownerName: true,
+  portraitAssetId: true,
   publicCode: true,
   codeFormat: true,
   barcodeType: true,
@@ -76,6 +80,66 @@ export class SmartCardsService {
     private readonly signer: CardSigningService,
     private readonly renderer: CardRendererService,
   ) {}
+
+  async createPortraitAsset(
+    user: RequestUser,
+    file: { buffer: Buffer; mimetype: string; size: number },
+    ipAddress?: string,
+  ) {
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowedTypes.has(file.mimetype)) {
+      throw new BadRequestException('صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WebP');
+    }
+    if (file.size > 5_000_000) {
+      throw new BadRequestException('حجم الصورة يجب ألا يتجاوز 5 ميجابايت');
+    }
+
+    let normalized: { content: Buffer; mimeType: string };
+    try {
+      normalized = await this.renderer.normalizePortrait(file.buffer);
+    } catch {
+      throw new BadRequestException('تعذر قراءة الصورة أو أن الملف غير صالح');
+    }
+
+    const storedContent = toPrismaBytes(normalized.content);
+    const sha256 = createHash('sha256').update(storedContent).digest('hex');
+    const asset = await this.prisma.cardPortraitAsset.upsert({
+      where: {
+        organizationId_sha256: {
+          organizationId: user.organizationId,
+          sha256,
+        },
+      },
+      update: {},
+      create: {
+        organizationId: user.organizationId,
+        mimeType: normalized.mimeType,
+        byteSize: storedContent.byteLength,
+        sha256,
+        content: storedContent,
+      },
+      select: { id: true, mimeType: true, byteSize: true, createdAt: true },
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'smart_card.portrait.upload',
+      entityType: 'CardPortraitAsset',
+      entityId: asset.id,
+      metadata: { mimeType: asset.mimeType, byteSize: asset.byteSize },
+      ipAddress,
+    });
+    return asset;
+  }
+
+  async portraitAssetImage(user: RequestUser, assetId: string) {
+    const asset = await this.prisma.cardPortraitAsset.findFirst({
+      where: { id: assetId, organizationId: user.organizationId },
+      select: { id: true, mimeType: true, content: true },
+    });
+    if (!asset) throw new NotFoundException('صورة صاحب الكارت غير موجودة');
+    return { buffer: Buffer.from(asset.content), mimeType: asset.mimeType };
+  }
 
   async templates(user: RequestUser) {
     const items = await this.prisma.cardTemplate.findMany({
@@ -240,18 +304,29 @@ export class SmartCardsService {
     if (template.cardType !== dto.cardType) {
       throw new BadRequestException('نوع التصميم لا يطابق نوع صاحب الكارت');
     }
+    if (dto.portraitAssetId) {
+      await this.assertPortraitAssetAccess(user, dto.portraitAssetId);
+    }
 
-    const publicCode = await this.nextPublicCode(dto.cardType);
     const now = new Date();
-    const card = await this.prisma.$transaction(async (transaction) => {
-      const created = await transaction.qrCard.create({
+    const result = await this.prisma.$transaction(async (transaction) => {
+      const sequence = await this.nextSequence(transaction, user.organizationId, dto.cardType, {
+        card: true,
+        subject: !dto.subjectId?.trim(),
+      });
+      const publicCode = this.formatPublicCode(dto.cardType, sequence.lastCardNumber);
+      const subjectId =
+        dto.subjectId?.trim() || this.formatSubjectCode(dto.cardType, sequence.lastSubjectNumber);
+
+      const card = await transaction.qrCard.create({
         data: {
           organizationId: user.organizationId,
           branchId: dto.branchId,
           templateId: template.id,
           cardType: dto.cardType,
-          subjectId: dto.subjectId.trim(),
+          subjectId,
           ownerName: dto.ownerName.trim(),
+          portraitAssetId: dto.portraitAssetId ?? null,
           publicCode,
           secretHash: this.signer.fingerprint(publicCode),
           codeFormat: dto.codeFormat ?? template.defaultCodeFormat,
@@ -265,23 +340,28 @@ export class SmartCardsService {
       });
       await transaction.cardEvent.createMany({
         data: [
-          { cardId: created.id, actorId: user.id, eventType: 'CREATED' },
-          { cardId: created.id, actorId: user.id, eventType: 'ASSIGNED' },
-          { cardId: created.id, actorId: user.id, eventType: 'ACTIVATED' },
+          { cardId: card.id, actorId: user.id, eventType: 'CREATED' },
+          { cardId: card.id, actorId: user.id, eventType: 'ASSIGNED' },
+          { cardId: card.id, actorId: user.id, eventType: 'ACTIVATED' },
         ],
       });
-      return created;
+      return { card, publicCode, subjectId };
     });
 
     await this.audit.record({
       actorId: user.id,
       action: 'smart_card.issue',
       entityType: 'QrCard',
-      entityId: card.id,
-      metadata: { publicCode, cardType: dto.cardType, subjectId: dto.subjectId },
+      entityId: result.card.id,
+      metadata: {
+        publicCode: result.publicCode,
+        cardType: dto.cardType,
+        subjectId: result.subjectId,
+        portraitAssetId: dto.portraitAssetId ?? null,
+      },
       ipAddress,
     });
-    return card;
+    return result.card;
   }
 
   async inventoryBatches(user: RequestUser) {
@@ -417,21 +497,36 @@ export class SmartCardsService {
     if (template.cardType !== dto.cardType) {
       throw new BadRequestException('نوع التصميم لا يطابق نوع صاحب الكارت');
     }
+    if (dto.portraitAssetId) {
+      await this.assertPortraitAssetAccess(user, dto.portraitAssetId);
+    }
     const existing = await this.cardForUser(user, cardId);
     if (existing.status !== 'IN_STOCK') {
       throw new ConflictException('يمكن ربط الكروت المتاحة في المخزون فقط');
     }
 
     const now = new Date();
-    const card = await this.prisma.$transaction(async (transaction) => {
-      const updated = await transaction.qrCard.update({
+    const result = await this.prisma.$transaction(async (transaction) => {
+      let subjectId = dto.subjectId?.trim();
+      if (!subjectId) {
+        const sequence = await this.nextSequence(
+          transaction,
+          user.organizationId,
+          dto.cardType,
+          { card: false, subject: true },
+        );
+        subjectId = this.formatSubjectCode(dto.cardType, sequence.lastSubjectNumber);
+      }
+
+      const card = await transaction.qrCard.update({
         where: { id: existing.id },
         data: {
           branchId: dto.branchId,
           templateId: template.id,
           cardType: dto.cardType,
-          subjectId: dto.subjectId.trim(),
+          subjectId,
           ownerName: dto.ownerName.trim(),
+          portraitAssetId: dto.portraitAssetId ?? null,
           status: 'ACTIVE',
           assignedAt: now,
           activatedAt: now,
@@ -454,18 +549,22 @@ export class SmartCardsService {
           data: { status: available === 0 ? 'COMPLETED' : 'PARTIALLY_ASSIGNED' },
         });
       }
-      return updated;
+      return { card, subjectId };
     });
 
     await this.audit.record({
       actorId: user.id,
       action: 'smart_card.assign_existing',
       entityType: 'QrCard',
-      entityId: card.id,
-      metadata: { subjectId: dto.subjectId, publicCode: card.publicCode },
+      entityId: result.card.id,
+      metadata: {
+        subjectId: result.subjectId,
+        publicCode: result.card.publicCode,
+        portraitAssetId: dto.portraitAssetId ?? null,
+      },
       ipAddress,
     });
-    return card;
+    return result.card;
   }
 
   async setCardStatus(
@@ -518,9 +617,15 @@ export class SmartCardsService {
     if (oldCard.status === 'REPLACED' || oldCard.status === 'REVOKED') {
       throw new ConflictException('هذا الكارت منتهي بالفعل');
     }
-    const publicCode = await this.nextPublicCode(oldCard.cardType);
     const now = new Date();
-    const card = await this.prisma.$transaction(async (transaction) => {
+    const result = await this.prisma.$transaction(async (transaction) => {
+      const sequence = await this.nextSequence(
+        transaction,
+        user.organizationId,
+        oldCard.cardType,
+        { card: true, subject: false },
+      );
+      const publicCode = this.formatPublicCode(oldCard.cardType, sequence.lastCardNumber);
       await transaction.qrCard.update({
         where: { id: oldCard.id },
         data: { status: 'REPLACED' },
@@ -533,6 +638,7 @@ export class SmartCardsService {
           cardType: oldCard.cardType,
           subjectId: oldCard.subjectId,
           ownerName: oldCard.ownerName,
+          portraitAssetId: oldCard.portraitAssetId,
           publicCode,
           secretHash: this.signer.fingerprint(publicCode),
           codeFormat: oldCard.codeFormat,
@@ -547,33 +653,43 @@ export class SmartCardsService {
       });
       await transaction.cardEvent.createMany({
         data: [
-          { cardId: oldCard.id, actorId: user.id, eventType: 'REPLACED', metadata: { replacementId: replacement.id } },
-          { cardId: replacement.id, actorId: user.id, eventType: 'CREATED', metadata: { replacesCardId: oldCard.id } },
+          {
+            cardId: oldCard.id,
+            actorId: user.id,
+            eventType: 'REPLACED',
+            metadata: { replacementId: replacement.id },
+          },
+          {
+            cardId: replacement.id,
+            actorId: user.id,
+            eventType: 'CREATED',
+            metadata: { replacesCardId: oldCard.id },
+          },
           { cardId: replacement.id, actorId: user.id, eventType: 'ACTIVATED' },
         ],
       });
-      return replacement;
+      return { replacement, publicCode };
     });
     await this.audit.record({
       actorId: user.id,
       action: 'smart_card.replace',
       entityType: 'QrCard',
-      entityId: card.id,
-      metadata: { replacedCardId: oldCard.id },
+      entityId: result.replacement.id,
+      metadata: { replacedCardId: oldCard.id, publicCode: result.publicCode },
       ipAddress,
     });
-    return card;
+    return result.replacement;
   }
 
   async cardImage(
     user: RequestUser,
     cardId: string,
-    side: CardSide,
+    selection: CardSelection,
     format: ImageFormat,
   ) {
     const input = await this.renderInputForCard(user, cardId);
-    const buffer = await this.renderer.renderCard(input, side, format);
-    return { buffer, filename: `${input.publicCode}-${side}.${format}`, format };
+    const buffer = await this.renderer.renderSelection(input, selection, format);
+    return { buffer, filename: `${input.publicCode}-${selection}.${format}`, format };
   }
 
   async codeImage(
@@ -599,6 +715,7 @@ export class SmartCardsService {
         name: true,
         status: true,
         layout: true,
+        sideSelection: true,
         pageCount: true,
         createdAt: true,
         printedAt: true,
@@ -631,7 +748,8 @@ export class SmartCardsService {
     if (dto.templateId) await this.templateForUser(user, dto.templateId, true);
     const branchIds = [...new Set(cards.map((card) => card.branchId).filter((id): id is string => Boolean(id)))];
     const branchId = branchIds.length === 1 ? branchIds[0] : null;
-    const pageCount = Math.ceil(cardIds.length / this.cardsPerPage(dto.layout));
+    const basePageCount = Math.ceil(cardIds.length / this.cardsPerPage(dto.layout));
+    const pageCount = dto.sideSelection === 'BOTH' ? basePageCount * 2 : basePageCount;
     const job = await this.prisma.cardPrintJob.create({
       data: {
         organizationId: user.organizationId,
@@ -640,19 +758,20 @@ export class SmartCardsService {
         name: dto.name.trim(),
         status: 'GENERATED',
         layout: dto.layout,
+        sideSelection: dto.sideSelection,
         pageCount,
         items: {
           create: cardIds.map((cardId, index) => ({ cardId, position: index })),
         },
       },
-      select: { id: true, name: true, status: true, layout: true, pageCount: true, createdAt: true },
+      select: { id: true, name: true, status: true, layout: true, sideSelection: true, pageCount: true, createdAt: true },
     });
     await this.audit.record({
       actorId: user.id,
       action: 'card_print_job.create',
       entityType: 'CardPrintJob',
       entityId: job.id,
-      metadata: { cardCount: cardIds.length, layout: dto.layout },
+      metadata: { cardCount: cardIds.length, layout: dto.layout, sideSelection: dto.sideSelection },
       ipAddress,
     });
     return job;
@@ -664,17 +783,23 @@ export class SmartCardsService {
       throw new BadRequestException('رقم صفحة الطباعة غير صحيح');
     }
     const perPage = this.cardsPerPage(job.layout);
+    const itemCount = await this.prisma.cardPrintJobItem.count({ where: { printJobId: job.id } });
+    const basePageCount = Math.ceil(itemCount / perPage);
+    const side: CardSide = job.sideSelection === 'BACK' || (job.sideSelection === 'BOTH' && page > basePageCount)
+      ? 'back'
+      : 'front';
+    const dataPage = job.sideSelection === 'BOTH' ? ((page - 1) % basePageCount) + 1 : page;
     const items = await this.prisma.cardPrintJobItem.findMany({
       where: { printJobId: job.id },
       orderBy: { position: 'asc' },
-      skip: (page - 1) * perPage,
+      skip: (dataPage - 1) * perPage,
       take: perPage,
       select: { cardId: true },
     });
     const cards: RenderCardInput[] = [];
     for (const item of items) cards.push(await this.renderInputForCard(user, item.cardId, job.templateId));
-    const buffer = await this.renderer.renderSheet(cards, job.layout);
-    return { buffer, filename: `${this.fileName(job.name)}-page-${page}.png` };
+    const buffer = await this.renderer.renderSheet(cards, job.layout, side);
+    return { buffer, filename: `${this.fileName(job.name)}-${side}-page-${dataPage}.png` };
   }
 
   async markPrintJobPrinted(user: RequestUser, printJobId: string, ipAddress?: string) {
@@ -744,7 +869,17 @@ export class SmartCardsService {
         expiresAt: true,
         codeFormat: true,
         barcodeType: true,
-        organization: { select: { name: true } },
+        portraitAsset: { select: { mimeType: true, content: true } },
+        organization: {
+          select: {
+            name: true,
+            cardSubtitle: true,
+            cardBackTitle: true,
+            cardBackInstruction: true,
+            cardBackFooter: true,
+            brandAsset: { select: { mimeType: true, content: true } },
+          },
+        },
         branch: { select: { name: true } },
         template: {
           select: {
@@ -753,6 +888,7 @@ export class SmartCardsService {
             accentColor: true,
             textColor: true,
             mutedTextColor: true,
+            showPhoto: true,
             showBranch: true,
             showExpiry: true,
           },
@@ -769,6 +905,7 @@ export class SmartCardsService {
         accentColor: override.accentColor,
         textColor: override.textColor,
         mutedTextColor: override.mutedTextColor,
+        showPhoto: override.showPhoto,
         showBranch: override.showBranch,
         showExpiry: override.showExpiry,
       };
@@ -783,7 +920,20 @@ export class SmartCardsService {
       barcodeType: card.barcodeType,
       qrPayload: this.signer.payload(card.publicCode),
       organizationName: card.organization.name,
+      organizationSubtitle: card.organization.cardSubtitle,
+      cardBackTitle: card.organization.cardBackTitle,
+      cardBackInstruction: card.organization.cardBackInstruction,
+      cardBackFooter: card.organization.cardBackFooter,
+      organizationLogo: card.organization.brandAsset
+        ? {
+            mimeType: card.organization.brandAsset.mimeType,
+            content: Buffer.from(card.organization.brandAsset.content),
+          }
+        : null,
       branchName: card.branch?.name ?? null,
+      portrait: card.portraitAsset
+        ? { mimeType: card.portraitAsset.mimeType, content: Buffer.from(card.portraitAsset.content) }
+        : null,
       template,
     };
   }
@@ -829,13 +979,52 @@ export class SmartCardsService {
     if (!branch) throw new NotFoundException('الفرع غير موجود أو خارج نطاق صلاحياتك');
   }
 
-  private async nextPublicCode(cardType: string): Promise<string> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const code = `EDU-${cardType.slice(0, 3)}-${randomBytes(6).toString('hex').toUpperCase()}`;
-      const exists = await this.prisma.qrCard.findUnique({ where: { publicCode: code }, select: { id: true } });
-      if (!exists) return code;
-    }
-    throw new ConflictException('تعذر إنشاء رقم كارت فريد، حاول مرة أخرى');
+  private async assertPortraitAssetAccess(user: RequestUser, portraitAssetId: string) {
+    const asset = await this.prisma.cardPortraitAsset.findFirst({
+      where: { id: portraitAssetId, organizationId: user.organizationId },
+      select: { id: true },
+    });
+    if (!asset) throw new NotFoundException('صورة صاحب الكارت غير موجودة أو غير متاحة');
+  }
+
+  private async nextSequence(
+    transaction: Prisma.TransactionClient,
+    organizationId: string,
+    cardType: CardType,
+    increment: { card: boolean; subject: boolean },
+  ) {
+    return transaction.cardSequence.upsert({
+      where: { organizationId_cardType: { organizationId, cardType } },
+      create: {
+        organizationId,
+        cardType,
+        lastCardNumber: increment.card ? 1 : 0,
+        lastSubjectNumber: increment.subject ? 1 : 0,
+      },
+      update: {
+        ...(increment.card ? { lastCardNumber: { increment: 1 } } : {}),
+        ...(increment.subject ? { lastSubjectNumber: { increment: 1 } } : {}),
+      },
+      select: { lastCardNumber: true, lastSubjectNumber: true },
+    });
+  }
+
+  private formatPublicCode(cardType: CardType, sequence: number): string {
+    return `EDU-${this.cardTypePrefix(cardType)}-${String(sequence).padStart(6, '0')}`;
+  }
+
+  private formatSubjectCode(cardType: CardType, sequence: number): string {
+    return `${this.cardTypePrefix(cardType)}-${String(sequence).padStart(6, '0')}`;
+  }
+
+  private cardTypePrefix(cardType: CardType): string {
+    const prefixes: Record<CardType, string> = {
+      STUDENT: 'STU',
+      GUARDIAN: 'GUA',
+      TEACHER: 'TCH',
+      STAFF: 'STF',
+    };
+    return prefixes[cardType];
   }
 
   private cardsPerPage(layout: CardPrintLayout): number {

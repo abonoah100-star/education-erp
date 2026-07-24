@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   DefaultValuePipe,
@@ -10,16 +11,19 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../core/authz/current-user.decorator';
 import { RequirePermissions } from '../../core/authz/permissions.decorator';
 import { PermissionsGuard } from '../../core/authz/permissions.guard';
 import type { RequestUser } from '../../core/authz/request-user';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import type { CardSide, CodeImageKind, ImageFormat } from './card-renderer.service';
+import type { CardSelection, CodeImageKind, ImageFormat } from './card-renderer.service';
 import { CreateInventoryBatchDto } from './dto/batch.dto';
 import {
   AssignInventoryCardDto,
@@ -37,6 +41,40 @@ import { SmartCardsService } from './smart-cards.service';
 @Controller('smart-cards')
 export class SmartCardsController {
   constructor(private readonly service: SmartCardsService) {}
+
+  @Post('portrait-assets')
+  @RequirePermissions('smart_cards.issue')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5_000_000 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  uploadPortrait(
+    @CurrentUser() user: RequestUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: Request,
+  ) {
+    if (!file) throw new BadRequestException('اختر صورة صالحة أولًا');
+    return this.service.createPortraitAsset(user, file, request.ip);
+  }
+
+  @Get('portrait-assets/:assetId/image')
+  @RequirePermissions('smart_cards.view')
+  async portraitImage(
+    @CurrentUser() user: RequestUser,
+    @Param('assetId') assetId: string,
+    @Res() response: Response,
+  ) {
+    const image = await this.service.portraitAssetImage(user, assetId);
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Disposition', `inline; filename="portrait-${assetId}.jpg"`);
+    response.setHeader('Cache-Control', 'private, max-age=3600');
+    response.send(image.buffer);
+  }
 
   @Get('templates')
   @RequirePermissions('card_templates.view')
@@ -184,9 +222,9 @@ export class SmartCardsController {
     @Query('download', new DefaultValuePipe('0')) download: string,
     @Res() response: Response,
   ) {
-    const side: CardSide = sideValue === 'back' ? 'back' : 'front';
+    const selection: CardSelection = sideValue === 'back' ? 'back' : sideValue === 'both' ? 'both' : 'front';
     const format: ImageFormat = formatValue === 'svg' ? 'svg' : 'png';
-    const image = await this.service.cardImage(user, cardId, side, format);
+    const image = await this.service.cardImage(user, cardId, selection, format);
     response.setHeader('Content-Type', format === 'svg' ? 'image/svg+xml' : 'image/png');
     response.setHeader(
       'Content-Disposition',

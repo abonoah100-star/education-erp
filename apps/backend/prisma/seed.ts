@@ -15,6 +15,23 @@ const permissionRows = [
   ['roles.view', 'عرض الأدوار والصلاحيات', 'access'],
   ['roles.manage', 'إدارة الأدوار والصلاحيات', 'access'],
   ['audit.view', 'عرض سجل المراجعة', 'audit'],
+  ['settings.view', 'عرض إعدادات المؤسسة', 'settings'],
+  ['settings.manage', 'إدارة إعدادات المؤسسة', 'settings'],
+  ['students.view', 'عرض الطلاب', 'students'],
+  ['students.create', 'تسجيل طالب جديد', 'students'],
+  ['students.update', 'تعديل بيانات الطالب', 'students'],
+  ['students.change_status', 'تغيير حالة الطالب', 'students'],
+  ['students.change_branch', 'نقل الطالب بين الفروع', 'students'],
+  ['students.export', 'تصدير بيانات الطلاب', 'students'],
+  ['students.manage_documents', 'إدارة مستندات الطالب', 'students'],
+  ['students.manage_notes', 'إدارة ملاحظات الطالب', 'students'],
+  ['guardians.view', 'عرض أولياء الأمور', 'guardians'],
+  ['guardians.create', 'إضافة ولي أمر', 'guardians'],
+  ['guardians.update', 'تعديل بيانات ولي الأمر', 'guardians'],
+  ['guardians.link_students', 'ربط ولي الأمر بالطلاب', 'guardians'],
+  ['authorized_pickups.view', 'عرض المصرح لهم بالاستلام', 'authorized_pickups'],
+  ['authorized_pickups.manage', 'إدارة المصرح لهم بالاستلام', 'authorized_pickups'],
+  ['authorized_pickups.confirm_release', 'تأكيد استلام الطالب', 'authorized_pickups'],
   ['card_templates.view', 'عرض تصميمات الكروت', 'smart_cards'],
   ['card_templates.manage', 'إدارة تصميمات الكروت', 'smart_cards'],
   ['smart_cards.view', 'عرض الكروت الذكية', 'smart_cards'],
@@ -99,8 +116,16 @@ function cardFingerprint(publicCode: string): string {
 async function main(): Promise<void> {
   const organization = await prisma.organization.upsert({
     where: { code: 'EDUCORE' },
-    update: { name: 'EduCore Learning Center' },
-    create: { name: 'EduCore Learning Center', code: 'EDUCORE' },
+    update: {},
+    create: {
+      name: 'EduCore Learning Center',
+      systemName: 'EduCore ERP',
+      cardSubtitle: 'منصة إدارة مركز تعليمي',
+      cardBackTitle: 'هذه البطاقة ملك مركز EduCore التعليمي',
+      cardBackInstruction: 'عند العثور عليها يرجى تسليمها إلى أقرب فرع',
+      cardBackFooter: 'يرجى المحافظة على البطاقة وعدم مشاركتها مع الغير',
+      code: 'EDUCORE',
+    },
   });
 
   const mainBranch = await prisma.branch.upsert({
@@ -189,6 +214,20 @@ async function main(): Promise<void> {
     'cashboxes.view',
     'users.view',
     'roles.view',
+    'students.view',
+    'students.create',
+    'students.update',
+    'students.change_status',
+    'students.change_branch',
+    'students.manage_documents',
+    'students.manage_notes',
+    'guardians.view',
+    'guardians.create',
+    'guardians.update',
+    'guardians.link_students',
+    'authorized_pickups.view',
+    'authorized_pickups.manage',
+    'authorized_pickups.confirm_release',
     'card_templates.view',
     'smart_cards.view',
     'smart_cards.issue',
@@ -248,6 +287,182 @@ async function main(): Promise<void> {
     skipDuplicates: true,
   });
 
+  const profileSequences = [
+    { profileType: 'STUDENT' as const, lastNumber: 1 },
+    { profileType: 'GUARDIAN' as const, lastNumber: 1 },
+    { profileType: 'AUTHORIZED_PICKUP' as const, lastNumber: 1 },
+  ];
+  for (const sequence of profileSequences) {
+    await prisma.profileSequence.upsert({
+      where: {
+        organizationId_profileType: {
+          organizationId: organization.id,
+          profileType: sequence.profileType,
+        },
+      },
+      update: {},
+      create: {
+        organizationId: organization.id,
+        profileType: sequence.profileType,
+        lastNumber: sequence.lastNumber,
+      },
+    });
+  }
+
+  const demoStudent = await prisma.student.upsert({
+    where: {
+      organizationId_code: {
+        organizationId: organization.id,
+        code: 'STU-000001',
+      },
+    },
+    update: {
+      branchId: mainBranch.id,
+      nameArabic: 'أحمد محمد علي',
+      normalizedName: 'احمد محمد علي',
+      schoolName: 'مدرسة المستقبل',
+      gradeLevel: 'الصف الأول الإعدادي',
+      status: 'ACTIVE',
+    },
+    create: {
+      organizationId: organization.id,
+      branchId: mainBranch.id,
+      code: 'STU-000001',
+      sequenceNumber: 1,
+      nameArabic: 'أحمد محمد علي',
+      normalizedName: 'احمد محمد علي',
+      gender: 'MALE',
+      schoolName: 'مدرسة المستقبل',
+      gradeLevel: 'الصف الأول الإعدادي',
+      status: 'ACTIVE',
+    },
+  });
+
+  const demoGuardian = await prisma.guardian.upsert({
+    where: {
+      organizationId_code: {
+        organizationId: organization.id,
+        code: 'GDN-000001',
+      },
+    },
+    update: {
+      nameArabic: 'محمد علي',
+      normalizedName: 'محمد علي',
+      primaryPhone: '01000000001',
+      status: 'ACTIVE',
+    },
+    create: {
+      organizationId: organization.id,
+      code: 'GDN-000001',
+      sequenceNumber: 1,
+      nameArabic: 'محمد علي',
+      normalizedName: 'محمد علي',
+      primaryPhone: '01000000001',
+      status: 'ACTIVE',
+    },
+  });
+
+  await prisma.studentGuardian.upsert({
+    where: {
+      studentId_guardianId: {
+        studentId: demoStudent.id,
+        guardianId: demoGuardian.id,
+      },
+    },
+    update: {
+      relationship: 'FATHER',
+      isPrimary: true,
+      isFinancialResponsible: true,
+      receivesNotifications: true,
+      canPickup: true,
+    },
+    create: {
+      studentId: demoStudent.id,
+      guardianId: demoGuardian.id,
+      relationship: 'FATHER',
+      isPrimary: true,
+      isFinancialResponsible: true,
+      receivesNotifications: true,
+      canPickup: true,
+    },
+  });
+
+  const statusHistoryExists = await prisma.studentStatusHistory.findFirst({
+    where: {
+      studentId: demoStudent.id,
+      fromStatus: null,
+      toStatus: 'ACTIVE',
+    },
+    select: { id: true },
+  });
+  if (!statusHistoryExists) {
+    await prisma.studentStatusHistory.create({
+      data: {
+        studentId: demoStudent.id,
+        fromStatus: null,
+        toStatus: 'ACTIVE',
+        reason: 'بيانات تجريبية تأسيسية',
+        changedById: admin.id,
+      },
+    });
+  }
+
+  const demoPickup = await prisma.authorizedPickup.upsert({
+    where: {
+      organizationId_code: {
+        organizationId: organization.id,
+        code: 'PUP-000001',
+      },
+    },
+    update: {
+      guardianId: demoGuardian.id,
+      nameArabic: 'محمد علي',
+      normalizedName: 'محمد علي',
+      relationship: 'FATHER',
+      phone: '01000000001',
+      status: 'ACTIVE',
+    },
+    create: {
+      organizationId: organization.id,
+      code: 'PUP-000001',
+      sequenceNumber: 1,
+      guardianId: demoGuardian.id,
+      nameArabic: 'محمد علي',
+      normalizedName: 'محمد علي',
+      relationship: 'FATHER',
+      phone: '01000000001',
+      status: 'ACTIVE',
+    },
+  });
+
+  await prisma.authorizedPickupStudent.upsert({
+    where: {
+      authorizedPickupId_studentId: {
+        authorizedPickupId: demoPickup.id,
+        studentId: demoStudent.id,
+      },
+    },
+    update: { isActive: true },
+    create: {
+      authorizedPickupId: demoPickup.id,
+      studentId: demoStudent.id,
+      isActive: true,
+    },
+  });
+
+  await Promise.all(
+    profileSequences.map((sequence) =>
+      prisma.profileSequence.updateMany({
+        where: {
+          organizationId: organization.id,
+          profileType: sequence.profileType,
+          lastNumber: { lt: sequence.lastNumber },
+        },
+        data: { lastNumber: sequence.lastNumber },
+      }),
+    ),
+  );
+
   const templates = new Map<string, string>();
   for (const definition of templateDefinitions) {
     const template = await prisma.cardTemplate.upsert({
@@ -282,6 +497,22 @@ async function main(): Promise<void> {
     templates.set(definition.code, template.id);
   }
 
+  const sequenceTypes: CardType[] = ['STUDENT', 'GUARDIAN', 'TEACHER', 'STAFF'];
+  for (const cardType of sequenceTypes) {
+    await prisma.cardSequence.upsert({
+      where: {
+        organizationId_cardType: { organizationId: organization.id, cardType },
+      },
+      update: {},
+      create: {
+        organizationId: organization.id,
+        cardType,
+        lastCardNumber: 0,
+        lastSubjectNumber: cardType === 'STUDENT' ? 1 : 0,
+      },
+    });
+  }
+
   const studentTemplateId = templates.get('STUDENT-EMERALD');
   if (!studentTemplateId) throw new Error('Default student template was not created');
   await prisma.qrCard.upsert({
@@ -290,8 +521,9 @@ async function main(): Promise<void> {
       branchId: mainBranch.id,
       templateId: studentTemplateId,
       cardType: 'STUDENT',
-      subjectId: 'STU-0001',
-      ownerName: 'أحمد محمد علي',
+      subjectId: demoStudent.code,
+      studentId: demoStudent.id,
+      ownerName: demoStudent.nameArabic,
       secretHash: cardFingerprint('QR-DEMO-0001'),
       codeFormat: 'QR_AND_BARCODE',
       status: 'ACTIVE',
@@ -303,8 +535,9 @@ async function main(): Promise<void> {
       branchId: mainBranch.id,
       templateId: studentTemplateId,
       cardType: 'STUDENT',
-      subjectId: 'STU-0001',
-      ownerName: 'أحمد محمد علي',
+      subjectId: demoStudent.code,
+      studentId: demoStudent.id,
+      ownerName: demoStudent.nameArabic,
       publicCode: 'QR-DEMO-0001',
       secretHash: cardFingerprint('QR-DEMO-0001'),
       codeFormat: 'QR_AND_BARCODE',

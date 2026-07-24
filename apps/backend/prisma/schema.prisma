@@ -68,6 +68,12 @@ enum CardPrintLayout {
   A4_10_UP
 }
 
+enum CardPrintSide {
+  FRONT
+  BACK
+  BOTH
+}
+
 enum CardEventType {
   CREATED
   STOCKED
@@ -83,10 +89,76 @@ enum CardEventType {
   EXPIRED
 }
 
+
+enum StudentStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+  GRADUATED
+  ARCHIVED
+}
+
+enum StudentGender {
+  MALE
+  FEMALE
+}
+
+enum GuardianStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  LEGAL_GUARDIAN
+  GRANDFATHER
+  GRANDMOTHER
+  SIBLING
+  OTHER
+}
+
+enum AuthorizedPickupStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+  EXPIRED
+}
+
+enum StudentDocumentType {
+  BIRTH_CERTIFICATE
+  GUARDIAN_ID
+  STUDENT_PHOTO
+  MEDICAL_REPORT
+  ENROLLMENT_FORM
+  OTHER
+}
+
+enum StudentNoteCategory {
+  GENERAL
+  ADMINISTRATIVE
+  ACADEMIC
+  HEALTH
+  BEHAVIORAL
+}
+
+enum ProfileSequenceType {
+  STUDENT
+  GUARDIAN
+  AUTHORIZED_PICKUP
+}
+
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  code      String   @unique
+  id           String   @id @default(uuid())
+  name         String
+  systemName         String   @default("EduCore ERP")
+  cardSubtitle       String?
+  cardBackTitle      String?
+  cardBackInstruction String?
+  cardBackFooter     String?
+  code               String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -96,7 +168,15 @@ model Organization {
   cardTemplates CardTemplate[]
   cardBatches   CardBatch[]
   cards         QrCard[]
-  cardPrintJobs CardPrintJob[]
+  cardPrintJobs     CardPrintJob[]
+  cardSequences     CardSequence[]
+  portraitAssets    CardPortraitAsset[]
+  brandAsset        OrganizationBrandAsset?
+  profileSequences  ProfileSequence[]
+  personPhotoAssets PersonPhotoAsset[]
+  students           Student[]
+  guardians          Guardian[]
+  authorizedPickups  AuthorizedPickup[]
 }
 
 model Branch {
@@ -117,6 +197,7 @@ model Branch {
   cardBatches   CardBatch[]
   cards         QrCard[]
   cardPrintJobs CardPrintJob[]
+  students      Student[]
 
   @@unique([organizationId, code])
 }
@@ -149,8 +230,11 @@ model User {
 
   roleLinks   UserRole[]
   branchLinks UserBranch[]
-  auditLogs   AuditLog[]  @relation("AuditActor")
-  cardEvents  CardEvent[] @relation("CardEventActor")
+  auditLogs                AuditLog[]             @relation("AuditActor")
+  cardEvents               CardEvent[]            @relation("CardEventActor")
+  uploadedStudentDocuments StudentDocument[]      @relation("StudentDocumentUploader")
+  authoredStudentNotes     StudentNote[]          @relation("StudentNoteAuthor")
+  studentStatusChanges     StudentStatusHistory[] @relation("StudentStatusActor")
 }
 
 model Role {
@@ -219,6 +303,45 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
+}
+
+model CardSequence {
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cardType          CardType
+  lastCardNumber    Int          @default(0)
+  lastSubjectNumber Int          @default(0)
+  updatedAt         DateTime     @updatedAt
+
+  @@id([organizationId, cardType])
+}
+
+model OrganizationBrandAsset {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mimeType       String
+  byteSize       Int
+  sha256         String
+  content        Bytes
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model CardPortraitAsset {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mimeType       String
+  byteSize       Int
+  sha256         String
+  content        Bytes
+  createdAt      DateTime     @default(now())
+
+  cards QrCard[]
+
+  @@unique([organizationId, sha256])
+  @@index([organizationId, createdAt])
 }
 
 model CardTemplate {
@@ -294,8 +417,16 @@ model QrCard {
   batch          CardBatch?      @relation(fields: [batchId], references: [id], onDelete: SetNull)
   cardType       CardType
   subjectId      String?
-  ownerName      String?
-  publicCode     String          @unique
+  ownerName           String?
+  portraitAssetId     String?
+  portraitAsset       CardPortraitAsset? @relation(fields: [portraitAssetId], references: [id], onDelete: SetNull)
+  studentId           String?
+  student             Student?          @relation("StudentCards", fields: [studentId], references: [id], onDelete: SetNull)
+  guardianId          String?
+  guardian            Guardian?         @relation("GuardianCards", fields: [guardianId], references: [id], onDelete: SetNull)
+  authorizedPickupId  String?
+  authorizedPickup    AuthorizedPickup? @relation("AuthorizedPickupCards", fields: [authorizedPickupId], references: [id], onDelete: SetNull)
+  publicCode          String          @unique
   secretHash     String
   codeFormat     CardCodeFormat  @default(QR_AND_BARCODE)
   barcodeType    BarcodeType     @default(CODE128)
@@ -315,6 +446,10 @@ model QrCard {
 
   @@index([organizationId, branchId, cardType, status])
   @@index([organizationId, subjectId])
+  @@index([portraitAssetId])
+  @@index([studentId])
+  @@index([guardianId])
+  @@index([authorizedPickupId])
   @@index([batchId, status])
 }
 
@@ -342,6 +477,7 @@ model CardPrintJob {
   name           String
   status         CardPrintStatus @default(DRAFT)
   layout         CardPrintLayout @default(A4_8_UP)
+  sideSelection  CardPrintSide   @default(FRONT)
   pageCount      Int             @default(1)
   createdAt      DateTime        @default(now())
   printedAt      DateTime?
@@ -363,3 +499,236 @@ model CardPrintJobItem {
   @@id([printJobId, cardId])
   @@unique([printJobId, position])
 }
+
+model ProfileSequence {
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profileType    ProfileSequenceType
+  lastNumber     Int                 @default(0)
+  updatedAt      DateTime            @updatedAt
+
+  @@id([organizationId, profileType])
+}
+
+model PersonPhotoAsset {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mimeType       String
+  byteSize       Int
+  sha256         String
+  content        Bytes
+  createdAt      DateTime     @default(now())
+
+  students          Student[]
+  guardians         Guardian[]
+  authorizedPickups AuthorizedPickup[]
+
+  @@unique([organizationId, sha256])
+  @@index([organizationId, createdAt])
+}
+
+model Student {
+  id                  String        @id @default(uuid())
+  organizationId      String
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branchId            String
+  branch              Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  code                String
+  sequenceNumber      Int
+  nameArabic          String
+  normalizedName      String
+  nameEnglish         String?
+  gender              StudentGender?
+  birthDate           DateTime?     @db.Date
+  nationalId          String?
+  schoolName          String?
+  gradeLevel          String?
+  phone               String?
+  whatsappPhone       String?
+  address             String?
+  healthNotes         String?
+  adminNotes          String?
+  referralSource      String?
+  profilePhotoAssetId String?
+  profilePhotoAsset   PersonPhotoAsset? @relation(fields: [profilePhotoAssetId], references: [id], onDelete: SetNull)
+  status              StudentStatus @default(ACTIVE)
+  registeredAt        DateTime      @default(now())
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  guardians         StudentGuardian[]
+  authorizedPickups AuthorizedPickupStudent[]
+  documents         StudentDocument[]
+  notes             StudentNote[]
+  statusHistory     StudentStatusHistory[]
+  cards             QrCard[] @relation("StudentCards")
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, sequenceNumber])
+  @@unique([organizationId, nationalId])
+  @@index([organizationId, branchId, status])
+  @@index([organizationId, normalizedName])
+  @@index([organizationId, schoolName, gradeLevel])
+  @@index([organizationId, phone])
+  @@index([organizationId, whatsappPhone])
+  @@index([profilePhotoAssetId])
+}
+
+model Guardian {
+  id                  String         @id @default(uuid())
+  organizationId      String
+  organization        Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  code                String
+  sequenceNumber      Int
+  nameArabic          String
+  normalizedName      String
+  nameEnglish         String?
+  nationalId          String?
+  primaryPhone        String
+  whatsappPhone       String?
+  email               String?
+  address             String?
+  profilePhotoAssetId String?
+  profilePhotoAsset   PersonPhotoAsset? @relation(fields: [profilePhotoAssetId], references: [id], onDelete: SetNull)
+  status              GuardianStatus @default(ACTIVE)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  students                  StudentGuardian[]
+  authorizedPickupProfiles  AuthorizedPickup[]
+  cards                     QrCard[] @relation("GuardianCards")
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, sequenceNumber])
+  @@unique([organizationId, nationalId])
+  @@index([organizationId, normalizedName])
+  @@index([organizationId, primaryPhone])
+  @@index([organizationId, whatsappPhone])
+  @@index([profilePhotoAssetId])
+}
+
+model StudentGuardian {
+  studentId               String
+  guardianId              String
+  relationship            GuardianRelationship
+  customRelationship      String?
+  isPrimary               Boolean @default(false)
+  isFinancialResponsible  Boolean @default(false)
+  receivesNotifications   Boolean @default(true)
+  canPickup               Boolean @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@id([studentId, guardianId])
+  @@index([guardianId])
+}
+
+model AuthorizedPickup {
+  id                  String                 @id @default(uuid())
+  organizationId      String
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  code                String
+  sequenceNumber      Int
+  guardianId          String?
+  guardian            Guardian?              @relation(fields: [guardianId], references: [id], onDelete: SetNull)
+  nameArabic          String
+  normalizedName      String
+  relationship        GuardianRelationship
+  customRelationship  String?
+  phone               String
+  nationalId          String?
+  profilePhotoAssetId String?
+  profilePhotoAsset   PersonPhotoAsset?      @relation(fields: [profilePhotoAssetId], references: [id], onDelete: SetNull)
+  status              AuthorizedPickupStatus @default(ACTIVE)
+  validFrom           DateTime?              @db.Date
+  validUntil          DateTime?              @db.Date
+  securityNotes       String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  students AuthorizedPickupStudent[]
+  cards    QrCard[] @relation("AuthorizedPickupCards")
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, sequenceNumber])
+  @@unique([organizationId, nationalId])
+  @@index([organizationId, normalizedName])
+  @@index([organizationId, phone])
+  @@index([guardianId])
+  @@index([profilePhotoAssetId])
+}
+
+model AuthorizedPickupStudent {
+  authorizedPickupId String
+  studentId          String
+  isActive           Boolean  @default(true)
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  authorizedPickup AuthorizedPickup @relation(fields: [authorizedPickupId], references: [id], onDelete: Cascade)
+  student          Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([authorizedPickupId, studentId])
+  @@index([studentId, isActive])
+}
+
+model StudentDocument {
+  id           String              @id @default(uuid())
+  studentId    String
+  student      Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  documentType StudentDocumentType
+  title        String
+  fileName     String
+  mimeType     String
+  byteSize     Int
+  sha256       String
+  content      Bytes
+  expiresAt    DateTime?           @db.Date
+  isSensitive  Boolean             @default(false)
+  uploadedById String?
+  uploadedBy   User?               @relation("StudentDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([studentId, sha256])
+  @@index([studentId, documentType])
+  @@index([expiresAt])
+  @@index([uploadedById])
+}
+
+model StudentNote {
+  id          String              @id @default(uuid())
+  studentId   String
+  student     Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  category    StudentNoteCategory @default(GENERAL)
+  content     String
+  isSensitive Boolean             @default(false)
+  createdById String?
+  createdBy   User?               @relation("StudentNoteAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([studentId, category, createdAt])
+  @@index([createdById])
+}
+
+model StudentStatusHistory {
+  id          String        @id @default(uuid())
+  studentId   String
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromStatus  StudentStatus?
+  toStatus    StudentStatus
+  reason      String?
+  changedById String?
+  changedBy   User?         @relation("StudentStatusActor", fields: [changedById], references: [id], onDelete: SetNull)
+  changedAt   DateTime      @default(now())
+
+  @@index([studentId, changedAt])
+  @@index([changedById])
+}
+

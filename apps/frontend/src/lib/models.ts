@@ -146,6 +146,7 @@ export interface SmartCardRow {
   cardType: SmartCardType;
   subjectId: string | null;
   ownerName: string | null;
+  portraitAssetId: string | null;
   publicCode: string;
   codeFormat: CardCodeFormat;
   barcodeType: 'CODE128';
@@ -186,6 +187,7 @@ export interface CardPrintJobRow {
   name: string;
   status: 'DRAFT' | 'GENERATED' | 'PRINTED' | 'FAILED';
   layout: CardPrintLayout;
+  sideSelection: CardPrintSide;
   pageCount: number;
   createdAt: string;
   printedAt: string | null;
@@ -193,3 +195,18 @@ export interface CardPrintJobRow {
   template: { id: string; name: string; code: string } | null;
   cardsCount: number;
 }
+
+export interface OrganizationSettings {
+  id?: string;
+  name: string;
+  systemName: string;
+  cardSubtitle: string | null;
+  cardBackTitle: string | null;
+  cardBackInstruction: string | null;
+  cardBackFooter: string | null;
+  logoUrl: string;
+  hasCustomLogo: boolean;
+  code?: string;
+}
+
+export type CardPrintSide = 'FRONT' | 'BACK' | 'BOTH';

@@ -1,4 +1,4 @@
-import { CardPrintLayout } from '@prisma/client';
+import { CardPrintLayout, CardPrintSide } from '@prisma/client';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 export class CreatePrintJobDto {
@@ -14,6 +14,9 @@ export class CreatePrintJobDto {
 
   @IsEnum(CardPrintLayout)
   layout!: CardPrintLayout;
+
+  @IsEnum(CardPrintSide)
+  sideSelection!: CardPrintSide;
 
   @IsOptional()
   @IsUUID()

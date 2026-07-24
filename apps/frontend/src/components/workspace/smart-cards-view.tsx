@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   Barcode,
   Boxes,
@@ -17,12 +17,13 @@ import {
   Share2,
   ShieldOff,
 } from 'lucide-react';
-import { downloadBlob, request, requestBlob } from '@/lib/api';
+import { downloadBlob, request, requestBlob, requestFormData } from '@/lib/api';
 import type {
   BranchRow,
   CardBatchRow,
   CardPrintJobRow,
   CardPrintLayout,
+  CardPrintSide,
   CardTemplateRow,
   ListResult,
   SmartCardRow,
@@ -111,12 +112,20 @@ export function SmartCardsView({ permissions }: Props) {
     setFormError('');
     const form = new FormData(event.currentTarget);
     try {
+      let portraitAssetId: string | undefined;
+      const photo = form.get('photo');
+      if (photo instanceof File && photo.size > 0) {
+        const upload = new FormData();
+        upload.append('file', photo);
+        const portrait = await requestFormData<{ id: string }>('/smart-cards/portrait-assets', upload);
+        portraitAssetId = portrait.id;
+      }
       const payload = {
         cardType: form.get('cardType'),
         branchId: form.get('branchId'),
         templateId: form.get('templateId'),
         ownerName: form.get('ownerName'),
-        subjectId: form.get('subjectId'),
+        portraitAssetId,
         codeFormat: form.get('codeFormat'),
         expiresAt: form.get('expiresAt') || undefined,
       };
@@ -215,6 +224,7 @@ export function SmartCardsView({ permissions }: Props) {
           name: form.get('name'),
           cardIds: [...selectedIds],
           layout: form.get('layout') as CardPrintLayout,
+          sideSelection: form.get('sideSelection') as CardPrintSide,
           templateId: form.get('templateId') || undefined,
         }),
       });
@@ -468,23 +478,47 @@ function InventoryDirectory({ batches, stockCards, canManage, onCreate, onAssign
 function PrintDirectory({ jobs, canMarkPrinted, canDownload, onDownload, onMarkPrinted }: { jobs: CardPrintJobRow[]; canMarkPrinted: boolean; canDownload: boolean; onDownload: (job: CardPrintJobRow, page: number) => void; onMarkPrinted: (job: CardPrintJobRow) => void }) {
   if (jobs.length === 0) return <EmptyState title="لا توجد مهام طباعة" description="حدد الكروت من صفحة الكروت ثم أنشئ مهمة طباعة." />;
   return <section className="data-surface">{jobs.map((job) => (
-    <article className="print-job-line" key={job.id}><div className="print-job-icon"><Printer size={21} /></div><div><strong>{job.name}</strong><span>{job.cardsCount} كارت · {job.layout} · {job.pageCount} صفحة</span></div><StatusPill active={job.status === 'PRINTED'} activeText="تمت الطباعة" inactiveText="جاهز" /><div className="inline-actions">{canDownload ? Array.from({ length: job.pageCount }, (_, index) => <button className="text-button" key={index} onClick={() => onDownload(job, index + 1)}>صفحة {index + 1}</button>) : null}{canMarkPrinted && job.status !== 'PRINTED' ? <button className="secondary-action" onClick={() => onMarkPrinted(job)}>اعتماد الطباعة</button> : null}</div></article>
+    <article className="print-job-line" key={job.id}><div className="print-job-icon"><Printer size={21} /></div><div><strong>{job.name}</strong><span>{job.cardsCount} كارت · {job.layout} · {job.sideSelection === 'BOTH' ? 'الوجهين' : job.sideSelection === 'BACK' ? 'الخلفي' : 'الأمامي'} · {job.pageCount} صفحة</span></div><StatusPill active={job.status === 'PRINTED'} activeText="تمت الطباعة" inactiveText="جاهز" /><div className="inline-actions">{canDownload ? Array.from({ length: job.pageCount }, (_, index) => <button className="text-button" key={index} onClick={() => onDownload(job, index + 1)}>صفحة {index + 1}</button>) : null}{canMarkPrinted && job.status !== 'PRINTED' ? <button className="secondary-action" onClick={() => onMarkPrinted(job)}>اعتماد الطباعة</button> : null}</div></article>
   ))}</section>;
 }
 
 function CardIssueForm({ branches, templates, inventoryCard, saving, error, onSubmit, onCancel }: { branches: BranchRow[]; templates: CardTemplateRow[]; inventoryCard: SmartCardRow | null; saving: boolean; error: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const defaultType = inventoryCard?.cardType ?? 'STUDENT';
+  const [photoPreview, setPhotoPreview] = useState('/default-student-avatar.svg');
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
+
+  function changePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setPhotoPreview('/default-student-avatar.svg');
+      return;
+    }
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
   return <form className="form-grid" onSubmit={onSubmit}>
     {inventoryCard ? <div className="security-notice full"><Barcode size={20} /><div><strong>{inventoryCard.publicCode}</strong><span>سيتم ربط هذا الكارت الموجود في المخزون بالشخص الجديد.</span></div></div> : null}
     <label className="field"><span>نوع صاحب الكارت</span><select name="cardType" defaultValue={defaultType}>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
     <label className="field"><span>الفرع</span><select name="branchId" defaultValue={inventoryCard?.branchId ?? branches[0]?.id} required>{branches.map((branch) => <option value={branch.id} key={branch.id}>{branch.name}</option>)}</select></label>
     <label className="field full"><span>التصميم</span><select name="templateId" defaultValue={inventoryCard?.templateId ?? templates[0]?.id} required>{templates.map((template) => <option value={template.id} key={template.id}>{template.name} — {cardTypeLabels[template.cardType]}</option>)}</select></label>
     <label className="field"><span>اسم صاحب الكارت</span><input name="ownerName" required maxLength={120} placeholder="الاسم كما سيظهر على الكارت" /></label>
-    <label className="field"><span>الكود داخل النظام</span><input name="subjectId" required maxLength={80} placeholder="STU-00025" /></label>
+    <div className="field sequence-preview"><span>الكود داخل النظام</span><strong>سيتم توليده تلقائيًا ومتسلسلًا عند الحفظ</strong><small>لا يمكن تكراره حتى مع إصدار أكثر من كارت في الوقت نفسه.</small></div>
+    <label className="field full card-photo-field">
+      <span>صورة صاحب الكارت — اختيارية</span>
+      <div className="card-photo-picker">
+        <img src={photoPreview} alt="معاينة صورة صاحب الكارت" />
+        <div><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={changePhoto} /><small>JPG أو PNG أو WebP — بحد أقصى 5 ميجابايت. عند عدم الاختيار تستخدم صورة طالب افتراضية.</small></div>
+      </div>
+    </label>
     <label className="field"><span>نوع الرمز</span><select name="codeFormat" defaultValue="QR_AND_BARCODE"><option value="QR_AND_BARCODE">QR + Barcode</option><option value="QR">QR فقط</option><option value="BARCODE">Barcode فقط</option></select></label>
     <label className="field"><span>تاريخ الانتهاء — اختياري</span><input name="expiresAt" type="datetime-local" /></label>
     {error ? <p className="form-error full">{error}</p> : null}
-    <div className="form-actions full"><button type="button" className="secondary-action" onClick={onCancel}>إلغاء</button><button className="primary-action" disabled={saving}>{saving ? 'جارٍ الحفظ...' : inventoryCard ? 'ربط وإظهار التصميم' : 'إصدار وإظهار التصميم'}</button></div>
+    <div className="form-actions full"><button type="button" className="secondary-action" onClick={onCancel}>إلغاء</button><button className="primary-action" disabled={saving}>{saving ? 'جارٍ رفع الصورة وإصدار الكارت...' : inventoryCard ? 'ربط وإظهار التصميم' : 'إصدار وإظهار التصميم'}</button></div>
   </form>;
 }
 
@@ -511,13 +545,23 @@ function BatchForm({ branches, templates, saving, error, onSubmit, onCancel }: {
 }
 
 function PrintForm({ templates, saving, error, onSubmit, onCancel }: { templates: CardTemplateRow[]; saving: boolean; error: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
-  return <form className="form-grid" onSubmit={onSubmit}><label className="field full"><span>اسم مهمة الطباعة</span><input name="name" required defaultValue={`طباعة كروت ${new Date().toLocaleDateString('ar-EG')}`} /></label><label className="field"><span>تخطيط الصورة</span><select name="layout" defaultValue="A4_8_UP"><option value="A4_8_UP">A4 — 8 كروت</option><option value="A4_10_UP">A4 — 10 كروت</option><option value="SINGLE">صورة منفردة</option></select></label><label className="field"><span>فرض تصميم — اختياري</span><select name="templateId" defaultValue=""><option value="">تصميم كل كارت</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></label>{error ? <p className="form-error full">{error}</p> : null}<div className="form-actions full"><button type="button" className="secondary-action" onClick={onCancel}>إلغاء</button><button className="primary-action" disabled={saving}>{saving ? 'جارٍ إنشاء الصورة...' : 'إنشاء وتنزيل الصفحة الأولى'}</button></div></form>;
+  return <form className="form-grid" onSubmit={onSubmit}>
+    <label className="field full"><span>اسم مهمة الطباعة</span><input name="name" required defaultValue={`طباعة كروت ${new Date().toLocaleDateString('ar-EG')}`} /></label>
+    <label className="field"><span>تخطيط الصورة</span><select name="layout" defaultValue="A4_8_UP"><option value="A4_8_UP">A4 — 8 كروت</option><option value="A4_10_UP">A4 — 10 كروت</option><option value="SINGLE">صورة منفردة</option></select></label>
+    <label className="field"><span>الأوجه المطلوبة</span><select name="sideSelection" defaultValue="FRONT"><option value="FRONT">الوجه الأمامي</option><option value="BACK">الوجه الخلفي</option><option value="BOTH">الوجهين — صفحات أمامية ثم خلفية</option></select></label>
+    <label className="field full"><span>فرض تصميم — اختياري</span><select name="templateId" defaultValue=""><option value="">تصميم كل كارت</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></label>
+    {error ? <p className="form-error full">{error}</p> : null}
+    <div className="form-actions full"><button type="button" className="secondary-action" onClick={onCancel}>إلغاء</button><button className="primary-action" disabled={saving}>{saving ? 'جارٍ إنشاء ملف الطباعة...' : 'إنشاء وتنزيل الصفحة الأولى'}</button></div>
+  </form>;
 }
 
 function CardPreviewModal({ card, onClose }: { card: SmartCardRow; onClose: () => void }) {
+  type SelectedSide = 'front' | 'back';
   const [frontUrl, setFrontUrl] = useState('');
   const [backUrl, setBackUrl] = useState('');
+  const [selectedSides, setSelectedSides] = useState<Set<SelectedSide>>(new Set(['front']));
   const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -539,25 +583,97 @@ function CardPreviewModal({ card, onClose }: { card: SmartCardRow; onClose: () =
     return () => { if (front) URL.revokeObjectURL(front); if (back) URL.revokeObjectURL(back); };
   }, [card.id]);
 
+  const selection = selectedSides.size === 2 ? 'both' : selectedSides.has('back') ? 'back' : 'front';
+
+  function toggleSide(side: SelectedSide) {
+    setSelectedSides((current) => {
+      const next = new Set(current);
+      if (next.has(side)) {
+        if (next.size > 1) next.delete(side);
+      } else next.add(side);
+      return next;
+    });
+  }
+
+  async function downloadSelected() {
+    setWorking(true);
+    try {
+      const blob = await requestBlob(`/smart-cards/${card.id}/image?side=${selection}&format=png&download=1`);
+      downloadBlob(blob, `${card.publicCode}-${selection}.png`);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function shareSelected() {
+    setWorking(true);
+    try {
+      const blob = await requestBlob(`/smart-cards/${card.id}/image?side=${selection}&format=png`);
+      const file = new File([blob], `${card.publicCode}-${selection}.png`, { type: 'image/png' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: card.ownerName ?? card.publicCode, files: [file] });
+      } else downloadBlob(blob, file.name);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function printSelected() {
+    const popup = window.open('', '_blank', 'width=1100,height=850');
+    if (!popup) {
+      setError('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم حاول مرة أخرى.');
+      return;
+    }
+    popup.document.write('<!doctype html><html lang="ar"><head><meta charset="utf-8"><title>جاري تجهيز الطباعة...</title></head><body>جاري تجهيز صورة الكارت...</body></html>');
+    popup.document.close();
+    setWorking(true);
+    try {
+      const sides: SelectedSide[] = selection === 'both' ? ['front', 'back'] : [selection];
+      const blobs = await Promise.all(sides.map((side) => requestBlob(`/smart-cards/${card.id}/image?side=${side}&format=png`)));
+      const urls = blobs.map((blob) => URL.createObjectURL(blob));
+      popup.document.open();
+      popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${card.publicCode}</title><style>
+        @page { size: 85.6mm 53.98mm; margin: 0; }
+        html,body{margin:0;padding:0;background:#fff}
+        .page{width:85.6mm;height:53.98mm;display:grid;place-items:center;break-after:page;page-break-after:always;overflow:hidden}
+        .page:last-child{break-after:auto;page-break-after:auto}
+        img{width:85.6mm;height:53.98mm;object-fit:fill;display:block}
+      </style></head><body>${urls.map((url) => `<section class="page"><img src="${url}" /></section>`).join('')}</body></html>`);
+      popup.document.close();
+      await Promise.all(Array.from(popup.document.images).map((image) => image.complete
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => { image.onload = () => resolve(); image.onerror = () => resolve(); })));
+      popup.onafterprint = () => popup.close();
+      popup.focus();
+      popup.print();
+      setTimeout(() => urls.forEach((url) => URL.revokeObjectURL(url)), 60_000);
+    } catch (reason) {
+      popup.close();
+      setError(reason instanceof Error ? reason.message : 'تعذر تجهيز الطباعة');
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function downloadAsset(path: string, filename: string) {
     downloadBlob(await requestBlob(path), filename);
   }
 
-  async function shareFront() {
-    const blob = await requestBlob(`/smart-cards/${card.id}/image?side=front&format=png`);
-    const file = new File([blob], `${card.publicCode}.png`, { type: 'image/png' });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ title: card.ownerName ?? card.publicCode, files: [file] });
-    } else downloadBlob(blob, file.name);
-  }
-
-  function printImage() {
-    if (!frontUrl) return;
-    const popup = window.open('', '_blank', 'width=1100,height=800');
-    if (!popup) return;
-    popup.document.write(`<html><head><title>${card.publicCode}</title><style>body{margin:0;display:grid;place-items:center;min-height:100vh}img{width:85.6mm;height:53.98mm}</style></head><body><img src="${frontUrl}" onload="window.print()"></body></html>`);
-    popup.document.close();
-  }
-
-  return <Modal title={`معاينة الكارت — ${card.publicCode}`} onClose={onClose}>{loading ? <LoadingState /> : error ? <ErrorState message={error} retry={() => window.location.reload()} /> : <div className="card-preview-workspace"><div className="card-preview-stage"><div><span>الوجه الأمامي</span>{frontUrl ? <img src={frontUrl} alt="الوجه الأمامي للكارت" /> : null}</div><div><span>الوجه الخلفي</span>{backUrl ? <img src={backUrl} alt="الوجه الخلفي للكارت" /> : null}</div></div><div className="card-image-actions"><button className="primary-action" onClick={() => void shareFront()}><Share2 size={17} /> مشاركة الصورة</button><button className="secondary-action" onClick={() => void downloadAsset(`/smart-cards/${card.id}/image?side=front&format=png&download=1`, `${card.publicCode}-front.png`)}><Download size={17} /> PNG كامل</button><button className="secondary-action" onClick={() => void downloadAsset(`/smart-cards/${card.id}/code-image?kind=qr&format=png&download=1`, `${card.publicCode}-qr.png`)}><QrCode size={17} /> صورة QR</button><button className="secondary-action" onClick={() => void downloadAsset(`/smart-cards/${card.id}/code-image?kind=barcode&format=png&download=1`, `${card.publicCode}-barcode.png`)}><Barcode size={17} /> صورة Barcode</button><button className="secondary-action" onClick={printImage}><Printer size={17} /> طباعة الكارت</button></div><div className="security-notice"><ImageIcon size={20} /><div><strong>الصور تُنشأ من الكود عند الطلب.</strong><span>يمكن تنزيل الكارت كاملًا أو QR أو الباركود كصورة PNG مستقلة.</span></div></div></div>}</Modal>;
+  return <Modal title={`معاينة الكارت — ${card.publicCode}`} onClose={onClose}>{loading ? <LoadingState /> : error && !frontUrl ? <ErrorState message={error} retry={() => window.location.reload()} /> : <div className="card-preview-workspace">
+    <div className="card-selection-help"><strong>حدد الصور المطلوبة</strong><span>اضغط على الوجه الأمامي أو الخلفي؛ الحفظ والمشاركة والطباعة ستستخدم الأوجه المحددة فقط.</span></div>
+    <div className="card-preview-stage">
+      <button type="button" className={`card-side-option ${selectedSides.has('front') ? 'selected' : ''}`} onClick={() => toggleSide('front')}><span><Check size={15} /> الوجه الأمامي</span>{frontUrl ? <img src={frontUrl} alt="الوجه الأمامي للكارت" /> : null}</button>
+      <button type="button" className={`card-side-option ${selectedSides.has('back') ? 'selected' : ''}`} onClick={() => toggleSide('back')}><span><Check size={15} /> الوجه الخلفي</span>{backUrl ? <img src={backUrl} alt="الوجه الخلفي للكارت" /> : null}</button>
+    </div>
+    {error ? <p className="form-error">{error}</p> : null}
+    <div className="card-image-actions">
+      <button className="primary-action" disabled={working} onClick={() => void shareSelected()}><Share2 size={17} /> مشاركة المحدد</button>
+      <button className="secondary-action" disabled={working} onClick={() => void downloadSelected()}><Download size={17} /> حفظ المحدد PNG</button>
+      <button className="secondary-action" onClick={() => void downloadAsset(`/smart-cards/${card.id}/code-image?kind=qr&format=png&download=1`, `${card.publicCode}-qr.png`)}><QrCode size={17} /> صورة QR</button>
+      <button className="secondary-action" onClick={() => void downloadAsset(`/smart-cards/${card.id}/code-image?kind=barcode&format=png&download=1`, `${card.publicCode}-barcode.png`)}><Barcode size={17} /> صورة Barcode</button>
+      <button className="secondary-action" disabled={working} onClick={() => void printSelected()}><Printer size={17} /> طباعة المحدد</button>
+    </div>
+    <div className="security-notice"><ImageIcon size={20} /><div><strong>الطباعة مكتملة بمقاس CR80.</strong><span>عند تحديد الوجهين يفتح كل وجه في صفحة منفصلة جاهزة للطباعة على الوجهين.</span></div></div>
+  </div>}</Modal>;
 }
+
