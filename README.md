@@ -69,3 +69,16 @@ See `docs/PROJECT_STATUS.md` and `docs/SPRINT_2B_1.md` before continuing to Spri
 - تكامل مباشر مع وحدة الكروت الذكية.
 
 راجع `docs/PROJECT_STATUS.md` لمعرفة ما تم وما تبقى.
+
+## Sprint 2B.3 — Students and Guardians UI
+
+The operational workspace now includes a dedicated Students & Guardians module with:
+
+- Student directory, search, branch/status filters, and pagination.
+- Multi-step registration with duplicate review.
+- Guardians and authorized-pickup capture.
+- Protected student photos and document uploads.
+- Student profile timeline, notes, documents, cards, and relations.
+- Smart-card issue or inventory assignment from the real student profile.
+
+See `docs/SPRINT_2B_3.md` and `docs/PROJECT_STATUS.md`.

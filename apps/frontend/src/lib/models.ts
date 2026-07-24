@@ -210,3 +210,184 @@ export interface OrganizationSettings {
 }
 
 export type CardPrintSide = 'FRONT' | 'BACK' | 'BOTH';
+
+export type StudentStatus = 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'WITHDRAWN' | 'GRADUATED' | 'ARCHIVED';
+export type StudentGender = 'MALE' | 'FEMALE';
+export type GuardianStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+export type AuthorizedPickupStatus = 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'ARCHIVED';
+export type GuardianRelationship = 'FATHER' | 'MOTHER' | 'BROTHER' | 'SISTER' | 'GRANDFATHER' | 'GRANDMOTHER' | 'UNCLE' | 'AUNT' | 'GUARDIAN' | 'OTHER';
+
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  pages: number;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  pagination: PaginationMeta;
+}
+
+export interface StudentGuardianSummary {
+  id: string;
+  code: string;
+  nameArabic: string;
+  primaryPhone: string;
+  whatsappPhone: string | null;
+}
+
+export interface StudentRow {
+  id: string;
+  branchId: string;
+  code: string;
+  nameArabic: string;
+  nameEnglish: string | null;
+  gender: StudentGender | null;
+  birthDate: string | null;
+  schoolName: string | null;
+  gradeLevel: string | null;
+  phone: string | null;
+  whatsappPhone: string | null;
+  status: StudentStatus;
+  registeredAt: string;
+  profilePhotoAssetId: string | null;
+  branch: BranchRef;
+  primaryGuardian: StudentGuardianSummary | null;
+  guardiansCount: number;
+  authorizedPickupsCount: number;
+  documentsCount: number;
+  cardsCount: number;
+}
+
+export interface StudentGuardianLinkRow {
+  relationship: GuardianRelationship;
+  customRelationship: string | null;
+  isPrimary: boolean;
+  isFinancialResponsible: boolean;
+  receivesNotifications: boolean;
+  canPickup: boolean;
+  isActive: boolean;
+  endedAt: string | null;
+  endReason: string | null;
+  createdAt: string;
+  guardian: {
+    id: string;
+    code: string;
+    nameArabic: string;
+    nameEnglish: string | null;
+    primaryPhone: string;
+    whatsappPhone: string | null;
+    email: string | null;
+    status: GuardianStatus;
+    profilePhotoAssetId: string | null;
+  };
+}
+
+export interface StudentPickupLinkRow {
+  isActive: boolean;
+  notes: string | null;
+  authorizedPickup: {
+    id: string;
+    code: string;
+    nameArabic: string;
+    relationship: GuardianRelationship;
+    customRelationship: string | null;
+    phone: string;
+    status: AuthorizedPickupStatus;
+    validFrom: string | null;
+    validUntil: string | null;
+    profilePhotoAssetId: string | null;
+  };
+}
+
+export interface StudentDocumentRow {
+  id: string;
+  documentType: string;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  expiresAt: string | null;
+  isSensitive: boolean;
+  createdAt: string;
+}
+
+export interface StudentNoteRow {
+  id: string;
+  category: string;
+  content: string;
+  isSensitive: boolean;
+  createdAt: string;
+  createdBy: { id: string; name: string };
+}
+
+export interface StudentStatusHistoryRow {
+  id: string;
+  fromStatus: StudentStatus | null;
+  toStatus: StudentStatus;
+  reason: string | null;
+  changedAt: string;
+  changedBy: { id: string; name: string };
+}
+
+export interface StudentDetails extends StudentRow {
+  address: string | null;
+  healthNotes: string | null;
+  adminNotes: string | null;
+  referralSource: string | null;
+  createdAt: string;
+  updatedAt: string;
+  guardians: StudentGuardianLinkRow[];
+  authorizedPickups: StudentPickupLinkRow[];
+  documents: StudentDocumentRow[];
+  notes: StudentNoteRow[];
+  statusHistory: StudentStatusHistoryRow[];
+  cards: Array<{ id: string; publicCode: string; subjectId: string | null; status: SmartCardStatus; cardType: SmartCardType; createdAt: string; expiresAt: string | null }>;
+}
+
+export interface DuplicateStudentRow extends StudentRow {
+  score: number;
+  reasons: string[];
+}
+
+export interface GuardianRow {
+  id: string;
+  code: string;
+  nameArabic: string;
+  nameEnglish: string | null;
+  primaryPhone: string;
+  whatsappPhone: string | null;
+  email: string | null;
+  status: GuardianStatus;
+  profilePhotoAssetId: string | null;
+  createdAt: string;
+  studentsCount: number;
+  students: Array<{
+    relationship: GuardianRelationship;
+    isPrimary: boolean;
+    student: { id: string; code: string; nameArabic: string; branch: BranchRef };
+  }>;
+}
+
+export interface GuardianDetails extends GuardianRow {
+  nationalId: string | null;
+  address: string | null;
+  updatedAt: string;
+  cards: Array<{ id: string; publicCode: string; subjectId: string | null; status: SmartCardStatus; createdAt: string }>;
+}
+
+export interface AuthorizedPickupRow {
+  id: string;
+  code: string;
+  nameArabic: string;
+  relationship: GuardianRelationship;
+  customRelationship: string | null;
+  phone: string;
+  status: AuthorizedPickupStatus;
+  validFrom: string | null;
+  validUntil: string | null;
+  profilePhotoAssetId: string | null;
+  studentsCount: number;
+  students: Array<{ student: { id: string; code: string; nameArabic: string; branch: BranchRef } }>;
+}

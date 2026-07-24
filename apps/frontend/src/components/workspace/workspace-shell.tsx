@@ -6,6 +6,7 @@ import {
   Building2,
   Command,
   CreditCard,
+  GraduationCap,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -23,13 +24,15 @@ import { OverviewView } from './overview-view';
 import { RolesView } from './roles-view';
 import { SettingsView } from './settings-view';
 import { SmartCardsView } from './smart-cards-view';
+import { StudentsView } from './students-view';
 import { UsersView } from './users-view';
 import { ErrorState, LoadingState } from './ui';
 
-type Tab = 'overview' | 'branches' | 'users' | 'roles' | 'smartCards' | 'audit' | 'settings';
+type Tab = 'overview' | 'students' | 'branches' | 'users' | 'roles' | 'smartCards' | 'audit' | 'settings';
 
 const navigation = [
   { id: 'overview' as const, label: 'التشغيل اليومي', icon: LayoutDashboard, permission: 'dashboard.view' },
+  { id: 'students' as const, label: 'الطلاب وأولياء الأمور', icon: GraduationCap, permission: 'students.view' },
   { id: 'branches' as const, label: 'الفروع والخزائن', icon: Building2, permission: 'branches.view' },
   { id: 'users' as const, label: 'المستخدمون', icon: Users, permission: 'users.view' },
   { id: 'roles' as const, label: 'الأدوار والصلاحيات', icon: KeyRound, permission: 'roles.view' },
@@ -134,6 +137,7 @@ export function WorkspaceShell() {
         </header>
         <section className="workspace-content">
           {tab === 'overview' ? <OverviewView /> : null}
+          {tab === 'students' ? <StudentsView permissions={user.permissions} sessionBranches={user.branches} /> : null}
           {tab === 'branches' ? <BranchesView canManage={can('branches.manage')} /> : null}
           {tab === 'users' ? <UsersView canManage={can('users.manage')} /> : null}
           {tab === 'roles' ? <RolesView canManage={can('roles.manage')} /> : null}
