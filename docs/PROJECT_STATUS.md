@@ -1,61 +1,76 @@
 # EduCore ERP — Project Status
 
-## Current stage
-- Sprint 1: Foundation — completed
-- Sprint 1.1: Security and operational UI — completed
-- Sprint 2A: Smart card management — completed
-- Sprint 2A.1–2A.3.1.1: Card rendering, printing, branding, and layout — completed
-- Sprint 2B.1: Students and guardians domain — installed with seed hotfix
-- Current release: **Sprint 2B.1.1**
+## الإصدار الحالي
 
-## Sprint 2B.1.1 hotfix
-The Sprint 2B.1 migration was applied successfully, but the seed command failed because `prisma/seed.ts` imported a TypeScript source module from `src/`. The production backend image intentionally contains the compiled application and Prisma files, not the full source tree. Therefore the runtime seed could not resolve that module.
+**2.5.0 — Sprint 2B.2: Students & Guardians Backend**
 
-### Root-cause correction
-- Removed the runtime dependency from Prisma seed to application source files.
-- Seed data now stores its explicit normalized demo values directly.
-- No production source-tree copy, path alias workaround, or TypeScript bypass was added.
-- No new database migration is required.
+## المراحل المكتملة
 
-## Current completed student-domain foundation
-- Students
-- Guardians
-- Student-guardian links
-- Authorized pickup people
-- Student photos and documents
-- Student notes
-- Student status history
-- Smart-card links to student, guardian, or authorized pickup
-- Organization-level sequential profile codes
-- Permissions and initial domain constraints
+- Sprint 1: البنية الأساسية والمصادقة والمؤسسات والفروع والخزائن والصلاحيات.
+- Sprint 1.1: تأمين الاستجابات واستكمال واجهات التشغيل الأساسية.
+- Sprint 2A: إدارة الكروت الذكية والتصميمات والمخزون والطباعة.
+- Sprint 2A.1–2A.3.1.1: تحسين الرندر والخطوط والصور والهوية ونصوص الخلفية والطباعة.
+- Sprint 2B.1.1: نطاق وقاعدة بيانات الطلاب والأولياء والمصرح لهم.
+- Sprint 2B.2: Backend تشغيلي كامل للنطاق السابق وتكامله مع الكروت.
 
-## Next implementation stage
-### Sprint 2B.2 — Students and Guardians Backend
-- Transactional student creation and sequential code generation
-- Search, filtering, pagination, and branch isolation
-- Duplicate-candidate detection
-- Student updates, branch transfer, and status changes
-- Guardian creation and linking
-- Authorized pickup management
-- Documents and photos
-- Smart-card assignment/issuance during student onboarding
-- Safe response DTOs, audit logs, and permission tests
+## ما يعمل الآن
 
-## Confirmed later roadmap additions
-### Sprint 3 — Academic management
-- Academic years and terms
-- Stages and grades
-- Subjects and courses
-- Automatic subject assignment by grade
-- Optional student-specific subjects
-- Teachers, groups, rooms, schedules, and collision prevention
+- تسجيل الدخول وRBAC وعزل الفروع.
+- إدارة الفروع والخزائن والمستخدمين والأدوار وسجل المراجعة.
+- إدارة الكروت الذكية مع QR وBarcode والصور والمشاركة والطباعة والمخزون.
+- API كامل لإنشاء وبحث وتعديل ونقل وإيقاف الطالب.
+- إدارة أولياء الأمور وعلاقاتهم التاريخية بالطلاب.
+- إدارة المصرح لهم بالاستلام.
+- صور الأشخاص ومستندات وملاحظات الطالب.
+- إصدار أو ربط كارت طالب من ملف الطالب.
 
-### Sprint 4 — Enrollment and finance
-- Per-session payment
-- Monthly subscription
-- Full-course payment
-- Subject/course prices by branch and grade
-- Invoices, payments, cashboxes, debts, and teacher entitlements
+## المرحلة التالية
 
-## Handover note
-Continue from **Sprint 2B.2** after confirming Sprint 2B.1.1 seed and application health on the VPS.
+### Sprint 2B.3 — Students & Guardians Frontend
+
+- تبويب الطلاب داخل مساحة العمل.
+- قائمة تشغيلية مع البحث والفلترة والصفحات.
+- نموذج تسجيل طالب متعدد الخطوات.
+- كشف التكرار قبل الحفظ.
+- إنشاء أو ربط ولي الأمر أثناء التسجيل.
+- إدارة المصرح لهم والمستندات والصورة.
+- اختيار إصدار كارت جديد أو ربط كارت مخزون أو تأجيل الطباعة.
+- ملف طالب بتبويبات وتاريخ نشاط.
+- تصميم كامل للكمبيوتر والتابلت والموبايل.
+
+## خارطة الطريق التالية
+
+### Sprint 3 — الإدارة الأكاديمية
+
+- السنوات والفصول الدراسية.
+- المراحل والصفوف.
+- المواد والكورسات.
+- مصفوفة مواد كل صف والإضافة التلقائية للطالب.
+- المدرسون والمجموعات والقاعات.
+- جداول الحصص ومنع التعارض.
+- مسودة جدول من المدرس واعتماد المدير.
+
+### Sprint 4 — الاشتراكات والمالية
+
+- الدفع بالحصة أو شهريًا أو بالكورس.
+- أسعار المادة حسب الفرع والصف والنظام.
+- الاشتراكات والفواتير والمدفوعات والخزائن والمديونيات.
+- مستحقات المدرسين وتقارير الدخل والربح.
+
+### Sprint 5 — الحضور والمتابعة
+
+- حضور الطالب بالكارت.
+- متابعة ولي الأمر والاستلام الآمن.
+- الإشعارات وتقارير الحضور.
+
+## قواعد ثابتة
+
+- لا ترقيع ولا حلول مؤقتة ولا تجاوزات للمعمارية.
+- التغييرات البنيوية تتم عبر Migrations فقط.
+- الصلاحيات تُفرض من الـBackend.
+- لا تُعاد Models قاعدة البيانات الخام في الاستجابات.
+- كل مرحلة تنتهي بملف حالة وتسليم محدث.
+
+## نقطة الاستكمال عند الانتقال إلى محادثة أخرى
+
+ابدأ من: **Sprint 2B.3 — Students & Guardians Frontend**، مع استخدام Backend الإصدار 2.5.0 والمسارات الموثقة في `docs/SPRINT_2B_2.md`.

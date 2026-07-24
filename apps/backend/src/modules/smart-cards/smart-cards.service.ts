@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CardCodeFormat,
   CardEventType,
   CardPrintLayout,
   CardPrintStatus,
@@ -362,6 +363,193 @@ export class SmartCardsService {
       ipAddress,
     });
     return result.card;
+  }
+
+
+  async issueForStudent(
+    user: RequestUser,
+    studentId: string,
+    dto: { templateId: string; codeFormat?: CardCodeFormat; expiresAt?: string },
+    ipAddress?: string,
+  ) {
+    const student = await this.studentForCard(user, studentId);
+    const template = await this.templateForUser(user, dto.templateId, true);
+    if (template.cardType !== 'STUDENT') {
+      throw new BadRequestException('التصميم المحدد ليس تصميم كارت طالب');
+    }
+
+    const now = new Date();
+    const card = await this.prisma.$transaction(async (transaction) => {
+      const existingActive = await transaction.qrCard.findFirst({
+        where: {
+          studentId,
+          status: { in: ['ACTIVE', 'SUSPENDED', 'LOST', 'DAMAGED'] },
+        },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw new ConflictException('الطالب لديه كارت حالي بالفعل. استخدم الاستبدال أو أوقف الكارت أولًا');
+      }
+
+      const sequence = await this.nextSequence(transaction, user.organizationId, 'STUDENT', {
+        card: true,
+        subject: false,
+      });
+      const publicCode = this.formatPublicCode('STUDENT', sequence.lastCardNumber);
+      const portraitAssetId = await this.ensureCardPortraitFromPersonPhoto(
+        transaction,
+        user.organizationId,
+        student.profilePhotoAssetId,
+      );
+      const created = await transaction.qrCard.create({
+        data: {
+          organizationId: user.organizationId,
+          branchId: student.branchId,
+          templateId: template.id,
+          cardType: 'STUDENT',
+          subjectId: student.code,
+          ownerName: student.nameArabic,
+          portraitAssetId,
+          studentId: student.id,
+          publicCode,
+          secretHash: this.signer.fingerprint(publicCode),
+          codeFormat: dto.codeFormat ?? template.defaultCodeFormat,
+          barcodeType: template.defaultBarcodeType,
+          status: 'ACTIVE',
+          assignedAt: now,
+          activatedAt: now,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        },
+        select: cardSafeSelect,
+      });
+      await transaction.cardEvent.createMany({
+        data: [
+          { cardId: created.id, actorId: user.id, eventType: 'CREATED' },
+          { cardId: created.id, actorId: user.id, eventType: 'ASSIGNED' },
+          { cardId: created.id, actorId: user.id, eventType: 'ACTIVATED' },
+        ],
+      });
+      return created;
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'student.card.issue',
+      entityType: 'QrCard',
+      entityId: card.id,
+      metadata: { studentId, publicCode: card.publicCode },
+      ipAddress,
+    });
+    return card;
+  }
+
+  async assignInventoryForStudent(
+    user: RequestUser,
+    studentId: string,
+    dto: { cardId: string; templateId: string; expiresAt?: string },
+    ipAddress?: string,
+  ) {
+    const student = await this.studentForCard(user, studentId);
+    const template = await this.templateForUser(user, dto.templateId, true);
+    if (template.cardType !== 'STUDENT') {
+      throw new BadRequestException('التصميم المحدد ليس تصميم كارت طالب');
+    }
+    const existing = await this.cardForUser(user, dto.cardId);
+    if (existing.status !== 'IN_STOCK') {
+      throw new ConflictException('يمكن ربط الكروت المتاحة في المخزون فقط');
+    }
+    if (existing.cardType !== 'STUDENT') {
+      throw new BadRequestException('الكارت الموجود ليس من مخزون كروت الطلاب');
+    }
+
+    const now = new Date();
+    const card = await this.prisma.$transaction(async (transaction) => {
+      const existingActive = await transaction.qrCard.findFirst({
+        where: {
+          studentId,
+          status: { in: ['ACTIVE', 'SUSPENDED', 'LOST', 'DAMAGED'] },
+        },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw new ConflictException('الطالب لديه كارت حالي بالفعل. استخدم الاستبدال أو أوقف الكارت أولًا');
+      }
+      const portraitAssetId = await this.ensureCardPortraitFromPersonPhoto(
+        transaction,
+        user.organizationId,
+        student.profilePhotoAssetId,
+      );
+      const updated = await transaction.qrCard.update({
+        where: { id: existing.id },
+        data: {
+          branchId: student.branchId,
+          templateId: template.id,
+          cardType: 'STUDENT',
+          subjectId: student.code,
+          ownerName: student.nameArabic,
+          portraitAssetId,
+          studentId: student.id,
+          guardianId: null,
+          authorizedPickupId: null,
+          status: 'ACTIVE',
+          assignedAt: now,
+          activatedAt: now,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        },
+        select: cardSafeSelect,
+      });
+      await transaction.cardEvent.createMany({
+        data: [
+          { cardId: existing.id, actorId: user.id, eventType: 'ASSIGNED' },
+          { cardId: existing.id, actorId: user.id, eventType: 'ACTIVATED' },
+        ],
+      });
+      if (existing.batchId) {
+        const available = await transaction.qrCard.count({
+          where: { batchId: existing.batchId, status: 'IN_STOCK' },
+        });
+        await transaction.cardBatch.update({
+          where: { id: existing.batchId },
+          data: { status: available === 0 ? 'COMPLETED' : 'PARTIALLY_ASSIGNED' },
+        });
+      }
+      return updated;
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'student.card.assign_existing',
+      entityType: 'QrCard',
+      entityId: card.id,
+      metadata: { studentId, publicCode: card.publicCode },
+      ipAddress,
+    });
+    return card;
+  }
+
+
+  async syncStudentPortrait(user: RequestUser, studentId: string, ipAddress?: string) {
+    const student = await this.studentForCard(user, studentId);
+    const portraitAssetId = await this.prisma.$transaction((transaction) =>
+      this.ensureCardPortraitFromPersonPhoto(
+        transaction,
+        user.organizationId,
+        student.profilePhotoAssetId,
+      ),
+    );
+    await this.prisma.qrCard.updateMany({
+      where: { studentId, organizationId: user.organizationId },
+      data: { portraitAssetId },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      action: 'student.card.portrait.sync',
+      entityType: 'Student',
+      entityId: studentId,
+      metadata: { portraitAssetId },
+      ipAddress,
+    });
+    return { studentId, portraitAssetId };
   }
 
   async inventoryBatches(user: RequestUser) {
@@ -936,6 +1124,52 @@ export class SmartCardsService {
         : null,
       template,
     };
+  }
+
+
+  private async studentForCard(user: RequestUser, studentId: string) {
+    const student = await this.prisma.student.findFirst({
+      where: {
+        id: studentId,
+        organizationId: user.organizationId,
+        ...(user.isOwner ? {} : { branchId: { in: user.branchIds } }),
+      },
+      select: {
+        id: true,
+        branchId: true,
+        code: true,
+        nameArabic: true,
+        profilePhotoAssetId: true,
+      },
+    });
+    if (!student) throw new NotFoundException('ملف الطالب غير موجود أو خارج نطاق صلاحياتك');
+    return student;
+  }
+
+  private async ensureCardPortraitFromPersonPhoto(
+    transaction: Prisma.TransactionClient,
+    organizationId: string,
+    personPhotoAssetId: string | null,
+  ): Promise<string | null> {
+    if (!personPhotoAssetId) return null;
+    const personPhoto = await transaction.personPhotoAsset.findFirst({
+      where: { id: personPhotoAssetId, organizationId },
+      select: { mimeType: true, byteSize: true, sha256: true, content: true },
+    });
+    if (!personPhoto) return null;
+    const cardPortrait = await transaction.cardPortraitAsset.upsert({
+      where: { organizationId_sha256: { organizationId, sha256: personPhoto.sha256 } },
+      update: {},
+      create: {
+        organizationId,
+        mimeType: personPhoto.mimeType,
+        byteSize: personPhoto.byteSize,
+        sha256: personPhoto.sha256,
+        content: toPrismaBytes(Buffer.from(personPhoto.content)),
+      },
+      select: { id: true },
+    });
+    return cardPortrait.id;
   }
 
   private async templateForUser(user: RequestUser, templateId: string, activeOnly: boolean) {

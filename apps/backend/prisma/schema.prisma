@@ -617,6 +617,9 @@ model StudentGuardian {
   isFinancialResponsible  Boolean @default(false)
   receivesNotifications   Boolean @default(true)
   canPickup               Boolean @default(true)
+  isActive                Boolean @default(true)
+  endedAt                 DateTime?
+  endReason               String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 

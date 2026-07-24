@@ -8,5 +8,6 @@ import { SmartCardsService } from './smart-cards.service';
 @Module({
   controllers: [SmartCardsController],
   providers: [SmartCardsService, CardSigningService, CardRendererService, PermissionsGuard],
+  exports: [SmartCardsService],
 })
 export class SmartCardsModule {}

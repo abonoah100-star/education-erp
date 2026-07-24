@@ -8,6 +8,7 @@ import { HealthController } from './modules/health/health.controller';
 import { BrandingController } from './modules/branding/branding.controller';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { SmartCardsModule } from './modules/smart-cards/smart-cards.module';
+import { StudentsModule } from './modules/students/students.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { SmartCardsModule } from './modules/smart-cards/smart-cards.module';
     WorkspaceModule,
     AccessModule,
     SmartCardsModule,
+    StudentsModule,
   ],
   controllers: [HealthController, BrandingController],
 })
