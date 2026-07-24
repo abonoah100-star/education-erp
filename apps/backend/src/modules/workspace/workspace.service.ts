@@ -1,13 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { CashboxStatus, CardType, Prisma } from '@prisma/client';
-import { hash } from 'bcryptjs';
-import { randomBytes } from 'node:crypto';
+import type { CashboxStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../../core/audit/audit.service';
 import type { RequestUser } from '../../core/authz/request-user';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import type { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
 import type { CreateCashboxDto } from './dto/cashbox.dto';
-import type { IssueQrCardDto } from './dto/qr-card.dto';
 
 @Injectable()
 export class WorkspaceService {
@@ -70,8 +67,8 @@ export class WorkspaceService {
         },
         {
           level: 'info',
-          title: 'تأمين بطاقات QR',
-          description: 'الرموز السرية لا تظهر في القوائم أو استجابات القراءة.',
+          title: 'إدارة الكروت الذكية',
+          description: 'QR وCode 128 وصور الكروت والطباعة الدفعية تعمل داخل وحدة مستقلة.',
         },
       ],
       recentActivity: audits.map((entry) => ({
@@ -257,95 +254,6 @@ export class WorkspaceService {
     return { ...cashbox, balance: Number(cashbox.balance) };
   }
 
-  async qrCards(user: RequestUser) {
-    const items = await this.prisma.qrCard.findMany({
-      where: { organizationId: user.organizationId },
-      select: {
-        id: true,
-        cardType: true,
-        subjectId: true,
-        publicCode: true,
-        isActive: true,
-        expiresAt: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { items, total: items.length };
-  }
-
-  async issueQrCard(user: RequestUser, dto: IssueQrCardDto, ipAddress?: string) {
-    const issued = await this.createQrRecord(user.organizationId, dto.cardType, dto.subjectId, dto.expiresAt);
-    await this.audit.record({
-      actorId: user.id,
-      action: 'qr.issue',
-      entityType: 'QrCard',
-      entityId: issued.card.id,
-      metadata: { cardType: dto.cardType, subjectId: dto.subjectId },
-      ipAddress,
-    });
-    return { ...issued.card, qrPayload: issued.qrPayload };
-  }
-
-  async revokeQrCard(user: RequestUser, cardId: string, ipAddress?: string) {
-    const existing = await this.prisma.qrCard.findFirst({
-      where: { id: cardId, organizationId: user.organizationId },
-      select: { id: true },
-    });
-    if (!existing) throw new NotFoundException('بطاقة QR غير موجودة');
-
-    const card = await this.prisma.qrCard.update({
-      where: { id: cardId },
-      data: { isActive: false },
-      select: {
-        id: true,
-        cardType: true,
-        subjectId: true,
-        publicCode: true,
-        isActive: true,
-        expiresAt: true,
-        createdAt: true,
-      },
-    });
-    await this.audit.record({
-      actorId: user.id,
-      action: 'qr.revoke',
-      entityType: 'QrCard',
-      entityId: card.id,
-      ipAddress,
-    });
-    return card;
-  }
-
-  async replaceQrCard(user: RequestUser, cardId: string, ipAddress?: string) {
-    const oldCard = await this.prisma.qrCard.findFirst({
-      where: { id: cardId, organizationId: user.organizationId },
-      select: { id: true, cardType: true, subjectId: true, expiresAt: true },
-    });
-    if (!oldCard) throw new NotFoundException('بطاقة QR غير موجودة');
-
-    const issued = await this.createQrRecord(
-      user.organizationId,
-      oldCard.cardType,
-      oldCard.subjectId,
-      oldCard.expiresAt?.toISOString(),
-      async (data) =>
-        this.prisma.$transaction(async (transaction) => {
-          await transaction.qrCard.update({ where: { id: oldCard.id }, data: { isActive: false } });
-          return transaction.qrCard.create({ data, select: this.qrSafeSelect() });
-        }),
-    );
-    await this.audit.record({
-      actorId: user.id,
-      action: 'qr.replace',
-      entityType: 'QrCard',
-      entityId: issued.card.id,
-      metadata: { replacedCardId: oldCard.id },
-      ipAddress,
-    });
-    return { ...issued.card, qrPayload: issued.qrPayload };
-  }
-
   private branchWhere(user: RequestUser): Prisma.BranchWhereInput {
     return {
       organizationId: user.organizationId,
@@ -361,46 +269,4 @@ export class WorkspaceService {
     if (!branch) throw new NotFoundException('الفرع غير موجود أو خارج نطاق صلاحياتك');
   }
 
-  private qrSafeSelect() {
-    return {
-      id: true,
-      cardType: true,
-      subjectId: true,
-      publicCode: true,
-      isActive: true,
-      expiresAt: true,
-      createdAt: true,
-    } satisfies Prisma.QrCardSelect;
-  }
-
-  private async createQrRecord(
-    organizationId: string,
-    cardType: CardType,
-    subjectId: string,
-    expiresAt?: string,
-    creator?: (data: Prisma.QrCardCreateInput) => Promise<{
-      id: string;
-      cardType: CardType;
-      subjectId: string;
-      publicCode: string;
-      isActive: boolean;
-      expiresAt: Date | null;
-      createdAt: Date;
-    }>,
-  ) {
-    const publicCode = `QR-${cardType}-${randomBytes(5).toString('hex').toUpperCase()}`;
-    const token = randomBytes(32).toString('base64url');
-    const data: Prisma.QrCardCreateInput = {
-      organizationId,
-      cardType,
-      subjectId: subjectId.trim(),
-      publicCode,
-      secretHash: await hash(token, 12),
-      expiresAt: expiresAt ? new Date(expiresAt) : null,
-    };
-    const card = creator
-      ? await creator(data)
-      : await this.prisma.qrCard.create({ data, select: this.qrSafeSelect() });
-    return { card, qrPayload: `educore:${publicCode}:${token}` };
-  }
 }

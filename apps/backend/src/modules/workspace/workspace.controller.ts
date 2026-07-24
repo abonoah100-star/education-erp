@@ -17,7 +17,6 @@ import type { RequestUser } from '../../core/authz/request-user';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateBranchDto, SetBranchStatusDto, UpdateBranchDto } from './dto/branch.dto';
 import { CreateCashboxDto, SetCashboxStatusDto } from './dto/cashbox.dto';
-import { IssueQrCardDto } from './dto/qr-card.dto';
 import { WorkspaceService } from './workspace.service';
 
 @ApiTags('workspace')
@@ -93,39 +92,4 @@ export class WorkspaceController {
     return this.service.setCashboxStatus(user, cashboxId, dto.status, request.ip);
   }
 
-  @Get('qr-cards')
-  @RequirePermissions('qr.view')
-  qrCards(@CurrentUser() user: RequestUser) {
-    return this.service.qrCards(user);
-  }
-
-  @Post('qr-cards')
-  @RequirePermissions('qr.manage')
-  issueQrCard(
-    @CurrentUser() user: RequestUser,
-    @Body() dto: IssueQrCardDto,
-    @Req() request: Request,
-  ) {
-    return this.service.issueQrCard(user, dto, request.ip);
-  }
-
-  @Post('qr-cards/:cardId/revoke')
-  @RequirePermissions('qr.manage')
-  revokeQrCard(
-    @CurrentUser() user: RequestUser,
-    @Param('cardId') cardId: string,
-    @Req() request: Request,
-  ) {
-    return this.service.revokeQrCard(user, cardId, request.ip);
-  }
-
-  @Post('qr-cards/:cardId/replace')
-  @RequirePermissions('qr.manage')
-  replaceQrCard(
-    @CurrentUser() user: RequestUser,
-    @Param('cardId') cardId: string,
-    @Req() request: Request,
-  ) {
-    return this.service.replaceQrCard(user, cardId, request.ip);
-  }
 }

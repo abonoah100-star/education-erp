@@ -1,27 +1,28 @@
-# EduCore ERP
+# Education ERP
 
-Multi-branch education-center ERP built as a modular monolith with a Next.js frontend, NestJS API, Prisma, PostgreSQL, Redis, and Docker.
+ERP عربي متعدد الفروع لإدارة المراكز التعليمية.
 
-## Current release
+## الإصدار الحالي
 
-`v1.1.0` — Sprint 1.1 Security and Operational UI.
+**Sprint 2A — Smart Card Management**
 
-## Core rules
+يتضمن:
 
-- No patches or hidden workarounds.
-- Root-cause fixes only.
-- Backend-enforced authorization.
-- Versioned database migrations.
-- No database models returned directly from sensitive endpoints.
-- Every sensitive mutation creates an audit record.
-- Lint, type checks, tests, and builds are required before merging.
+- Authentication وRBAC.
+- فروع وخزائن مستقلة.
+- مستخدمين وأدوار وسجل مراجعة.
+- تصميمات كروت متعددة للطالب وولي الأمر والمدرس والموظف.
+- QR موقّع وCode 128.
+- توليد صور PNG وSVG للكارت والرموز من الكود.
+- مشاركة وتنزيل وطباعة الصور.
+- مخزون كروت مطبوعة مسبقًا وربطها بأصحاب جدد.
+- صفحات طباعة دفعية A4.
 
-## Sprint 1.1 highlights
+## القاعدة غير القابلة للتفاوض
 
-- Safe QR and user API responses.
-- Branch-scoped access for non-owner accounts.
-- Branches, cashboxes, users, roles, QR cards, and audit log operational screens.
-- Create/activate/suspend/issue/revoke actions according to permissions.
-- Responsive Arabic RTL workspace without raw JSON views.
+لا تقبل حلول مؤقتة أو Workarounds أو تجاوزات للمعمارية. كل خلل يعالج من سببه الجذري ويُحمى باختبار أو قيد واضح.
 
-See `docs/SPRINT_1_1.md` for the complete delivery scope.
+راجع:
+
+- `docs/PROJECT_CONSTITUTION.md`
+- `docs/SPRINT_2A.md`

@@ -6,6 +6,7 @@ import { AccessModule } from './modules/access/access.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthController } from './modules/health/health.controller';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
+import { SmartCardsModule } from './modules/smart-cards/smart-cards.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { WorkspaceModule } from './modules/workspace/workspace.module';
     AuthModule,
     WorkspaceModule,
     AccessModule,
+    SmartCardsModule,
   ],
   controllers: [HealthController],
 })

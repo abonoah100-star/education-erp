@@ -27,7 +27,7 @@ async function bootstrap(): Promise<void> {
   const config = new DocumentBuilder()
     .setTitle('Education ERP API')
     .setDescription('Secure API for the multi-branch education ERP workspace')
-    .setVersion('1.1')
+    .setVersion('2A')
     .addBearerAuth()
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));

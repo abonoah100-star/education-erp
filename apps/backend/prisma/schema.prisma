@@ -20,7 +20,67 @@ enum CashboxStatus {
 enum CardType {
   STUDENT
   GUARDIAN
+  TEACHER
   STAFF
+}
+
+enum SmartCardStatus {
+  DRAFT
+  IN_STOCK
+  ASSIGNED
+  ACTIVE
+  SUSPENDED
+  LOST
+  DAMAGED
+  REPLACED
+  EXPIRED
+  REVOKED
+}
+
+enum CardCodeFormat {
+  QR
+  BARCODE
+  QR_AND_BARCODE
+}
+
+enum BarcodeType {
+  CODE128
+}
+
+enum CardBatchStatus {
+  DRAFT
+  GENERATED
+  PARTIALLY_ASSIGNED
+  COMPLETED
+  ARCHIVED
+}
+
+enum CardPrintStatus {
+  DRAFT
+  GENERATED
+  PRINTED
+  FAILED
+}
+
+enum CardPrintLayout {
+  SINGLE
+  A4_8_UP
+  A4_10_UP
+}
+
+enum CardEventType {
+  CREATED
+  STOCKED
+  ASSIGNED
+  ACTIVATED
+  IMAGE_GENERATED
+  PRINTED
+  SUSPENDED
+  REVOKED
+  REPLACED
+  MARKED_LOST
+  MARKED_DAMAGED
+  EXPIRED
 }
 
 model Organization {
@@ -30,9 +90,13 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches Branch[]
-  users    User[]
-  roles    Role[]
+  branches      Branch[]
+  users         User[]
+  roles         Role[]
+  cardTemplates CardTemplate[]
+  cardBatches   CardBatch[]
+  cards         QrCard[]
+  cardPrintJobs CardPrintJob[]
 }
 
 model Branch {
@@ -47,8 +111,12 @@ model Branch {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  cashboxes   Cashbox[]
-  memberships UserBranch[]
+  cashboxes     Cashbox[]
+  memberships   UserBranch[]
+  cardTemplates CardTemplate[]
+  cardBatches   CardBatch[]
+  cards         QrCard[]
+  cardPrintJobs CardPrintJob[]
 
   @@unique([organizationId, code])
 }
@@ -81,7 +149,8 @@ model User {
 
   roleLinks   UserRole[]
   branchLinks UserBranch[]
-  auditLogs   AuditLog[] @relation("AuditActor")
+  auditLogs   AuditLog[]  @relation("AuditActor")
+  cardEvents  CardEvent[] @relation("CardEventActor")
 }
 
 model Role {
@@ -152,14 +221,145 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-model QrCard {
-  id             String   @id @default(uuid())
+model CardTemplate {
+  id                   String         @id @default(uuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branchId             String?
+  branch               Branch?        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  name                 String
+  code                 String
+  cardType             CardType
+  description          String?
+  backgroundColor      String         @default("#0F3D32")
+  accentColor          String         @default("#D9B56D")
+  textColor            String         @default("#FFFFFF")
+  mutedTextColor       String         @default("#DDE8E4")
+  widthMm              Decimal        @default(85.60) @db.Decimal(6, 2)
+  heightMm             Decimal        @default(53.98) @db.Decimal(6, 2)
+  defaultCodeFormat    CardCodeFormat @default(QR_AND_BARCODE)
+  defaultBarcodeType   BarcodeType    @default(CODE128)
+  showPhoto            Boolean        @default(true)
+  showBranch           Boolean        @default(true)
+  showExpiry           Boolean        @default(false)
+  frontLayout          Json
+  backLayout           Json?
+  isDefault            Boolean        @default(false)
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  cards       QrCard[]
+  batches     CardBatch[]
+  printJobs   CardPrintJob[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, cardType, isActive])
+}
+
+model CardBatch {
+  id             String          @id @default(uuid())
   organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branchId       String
+  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  templateId     String
+  template       CardTemplate    @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  name           String
+  code           String
   cardType       CardType
-  subjectId      String
-  publicCode     String   @unique
+  status         CardBatchStatus @default(DRAFT)
+  prefix         String
+  startNumber    Int
+  quantity       Int
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  cards QrCard[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, branchId, status])
+}
+
+model QrCard {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branchId       String?
+  branch         Branch?         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  templateId     String?
+  template       CardTemplate?   @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  batchId        String?
+  batch          CardBatch?      @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  cardType       CardType
+  subjectId      String?
+  ownerName      String?
+  publicCode     String          @unique
   secretHash     String
-  isActive       Boolean  @default(true)
+  codeFormat     CardCodeFormat  @default(QR_AND_BARCODE)
+  barcodeType    BarcodeType     @default(CODE128)
+  status         SmartCardStatus @default(ACTIVE)
+  replacesCardId String?         @unique
+  replacesCard   QrCard?         @relation("CardReplacement", fields: [replacesCardId], references: [id], onDelete: SetNull)
+  replacement    QrCard?         @relation("CardReplacement")
   expiresAt      DateTime?
-  createdAt      DateTime @default(now())
+  assignedAt     DateTime?
+  activatedAt    DateTime?
+  printedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  events     CardEvent[]
+  printItems CardPrintJobItem[]
+
+  @@index([organizationId, branchId, cardType, status])
+  @@index([organizationId, subjectId])
+  @@index([batchId, status])
+}
+
+model CardEvent {
+  id        String        @id @default(uuid())
+  cardId    String
+  card      QrCard        @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?         @relation("CardEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  eventType CardEventType
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  @@index([cardId, createdAt])
+}
+
+model CardPrintJob {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branchId       String?
+  branch         Branch?         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  templateId     String?
+  template       CardTemplate?   @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  name           String
+  status         CardPrintStatus @default(DRAFT)
+  layout         CardPrintLayout @default(A4_8_UP)
+  pageCount      Int             @default(1)
+  createdAt      DateTime        @default(now())
+  printedAt      DateTime?
+  updatedAt      DateTime        @updatedAt
+
+  items CardPrintJobItem[]
+
+  @@index([organizationId, createdAt])
+}
+
+model CardPrintJobItem {
+  printJobId String
+  cardId     String
+  position   Int
+
+  printJob CardPrintJob @relation(fields: [printJobId], references: [id], onDelete: Cascade)
+  card     QrCard       @relation(fields: [cardId], references: [id], onDelete: Restrict)
+
+  @@id([printJobId, cardId])
+  @@unique([printJobId, position])
 }

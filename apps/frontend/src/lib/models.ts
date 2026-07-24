@@ -98,3 +98,98 @@ export interface ListResult<T> {
   items: T[];
   total: number;
 }
+
+export type SmartCardType = 'STUDENT' | 'GUARDIAN' | 'TEACHER' | 'STAFF';
+export type SmartCardStatus =
+  | 'DRAFT'
+  | 'IN_STOCK'
+  | 'ASSIGNED'
+  | 'ACTIVE'
+  | 'SUSPENDED'
+  | 'LOST'
+  | 'DAMAGED'
+  | 'REPLACED'
+  | 'EXPIRED'
+  | 'REVOKED';
+export type CardCodeFormat = 'QR' | 'BARCODE' | 'QR_AND_BARCODE';
+export type CardPrintLayout = 'SINGLE' | 'A4_8_UP' | 'A4_10_UP';
+
+export interface CardTemplateRow {
+  id: string;
+  branchId: string | null;
+  name: string;
+  code: string;
+  cardType: SmartCardType;
+  description: string | null;
+  backgroundColor: string;
+  accentColor: string;
+  textColor: string;
+  mutedTextColor: string;
+  widthMm: number;
+  heightMm: number;
+  defaultCodeFormat: CardCodeFormat;
+  defaultBarcodeType: 'CODE128';
+  showPhoto: boolean;
+  showBranch: boolean;
+  showExpiry: boolean;
+  isDefault: boolean;
+  isActive: boolean;
+  cardsCount: number;
+  branch: BranchRef | null;
+}
+
+export interface SmartCardRow {
+  id: string;
+  branchId: string | null;
+  templateId: string | null;
+  batchId: string | null;
+  cardType: SmartCardType;
+  subjectId: string | null;
+  ownerName: string | null;
+  publicCode: string;
+  codeFormat: CardCodeFormat;
+  barcodeType: 'CODE128';
+  status: SmartCardStatus;
+  replacesCardId: string | null;
+  expiresAt: string | null;
+  assignedAt: string | null;
+  activatedAt: string | null;
+  printedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  branch: BranchRef | null;
+  template: Pick<CardTemplateRow, 'id' | 'name' | 'code' | 'backgroundColor' | 'accentColor' | 'textColor' | 'mutedTextColor'> | null;
+  batch: { id: string; name: string; code: string } | null;
+}
+
+export interface CardBatchRow {
+  id: string;
+  branchId: string;
+  templateId: string;
+  name: string;
+  code: string;
+  cardType: SmartCardType;
+  status: 'DRAFT' | 'GENERATED' | 'PARTIALLY_ASSIGNED' | 'COMPLETED' | 'ARCHIVED';
+  prefix: string;
+  startNumber: number;
+  quantity: number;
+  notes: string | null;
+  createdAt: string;
+  branch: BranchRef;
+  template: { id: string; name: string; code: string };
+  cardsCount: number;
+  availableCount: number;
+}
+
+export interface CardPrintJobRow {
+  id: string;
+  name: string;
+  status: 'DRAFT' | 'GENERATED' | 'PRINTED' | 'FAILED';
+  layout: CardPrintLayout;
+  pageCount: number;
+  createdAt: string;
+  printedAt: string | null;
+  branch: BranchRef | null;
+  template: { id: string; name: string; code: string } | null;
+  cardsCount: number;
+}

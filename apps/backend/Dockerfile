@@ -8,6 +8,7 @@ FROM deps AS build
 COPY . .
 RUN npm run prisma:generate -w @education-erp/backend && npm run build -w @education-erp/backend
 FROM node:22-alpine AS runtime
+RUN apk add --no-cache font-dejavu
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /workspace/node_modules ./node_modules

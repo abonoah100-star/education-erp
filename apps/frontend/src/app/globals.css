@@ -204,3 +204,69 @@ a { color: inherit; text-decoration: none; }
   .cashbox-lines > div { grid-template-columns: 1fr auto; }
   .cashbox-lines .status-pill { grid-column: 1 / -1; }
 }
+
+/* Sprint 2A — Smart card operational workspace */
+.smart-card-modebar { display: flex; gap: 4px; border-block: 1px solid var(--line); padding: 8px 0; margin-bottom: 20px; overflow-x: auto; }
+.smart-card-modebar button { border: 0; background: transparent; color: var(--muted); padding: 10px 14px; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; border-radius: 5px; }
+.smart-card-modebar button.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 850; }
+.card-selection-bar { min-width: 1040px; min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: #fbfcfc; color: var(--muted); font-size: 13px; }
+.smart-card-grid { display: grid; grid-template-columns: 52px 1.15fr 1.1fr 1.2fr .7fr 1fr; gap: 15px; min-width: 1040px; }
+.card-check { display: inline-grid; place-items: center; cursor: pointer; }
+.card-check input { position: absolute; opacity: 0; pointer-events: none; }
+.card-check span { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid var(--line); color: transparent; background: white; border-radius: 4px; }
+.card-check input:checked + span { background: var(--primary); border-color: var(--primary); color: white; }
+.status-pill.card-status-in_stock { color: #7a5712; background: #fff5d9; }
+.status-pill.card-status-active { color: var(--primary-dark); background: var(--primary-soft); }
+.status-pill.card-status-suspended, .status-pill.card-status-lost, .status-pill.card-status-damaged, .status-pill.card-status-revoked, .status-pill.card-status-replaced { color: var(--danger); background: var(--danger-soft); }
+.status-pill.card-status-assigned, .status-pill.card-status-draft { color: #42505b; background: #eef2f4; }
+.template-workspace { display: grid; gap: 14px; }
+.surface-toolbar { min-height: 68px; border: 1px solid var(--line); background: white; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; }
+.surface-toolbar > div { display: grid; gap: 5px; }
+.surface-toolbar span { color: var(--muted); font-size: 12px; }
+.template-lines { border: 1px solid var(--line); background: white; }
+.template-line { display: grid; grid-template-columns: 150px minmax(0,1fr) auto auto; align-items: center; gap: 18px; padding: 18px; border-bottom: 1px solid var(--line-soft); }
+.template-line:last-child { border-bottom: 0; }
+.template-swatch { height: 84px; border-radius: 8px; display: grid; place-items: center; color: white; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+.template-copy { display: grid; gap: 6px; min-width: 0; }
+.template-copy > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.template-copy > span, .template-copy p { color: var(--muted); font-size: 12px; margin: 0; }
+.template-meta { display: grid; justify-items: end; gap: 8px; color: var(--muted); font-size: 12px; }
+.card-inventory-layout { grid-template-columns: minmax(0,1.25fr) minmax(320px,.75fr); }
+.inventory-batch-line, .stock-card-line, .print-job-line { border-bottom: 1px solid var(--line-soft); padding: 15px 18px; display: grid; align-items: center; gap: 16px; }
+.inventory-batch-line { grid-template-columns: minmax(0,1fr) auto auto; }
+.stock-card-line { grid-template-columns: auto minmax(0,1fr) auto; }
+.print-job-line { grid-template-columns: auto minmax(0,1fr) auto minmax(280px,auto); }
+.inventory-batch-line > div, .stock-card-line > div, .print-job-line > div:not(.inline-actions):not(.print-job-icon) { display: grid; gap: 5px; }
+.inventory-batch-line span, .stock-card-line span, .print-job-line span { color: var(--muted); font-size: 12px; }
+.print-job-icon { width: 42px; height: 42px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary-dark); border-radius: 6px; }
+.template-options { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; padding: 12px; border: 1px solid var(--line); }
+.template-options label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.color-field input[type="color"] { padding: 5px; min-height: 46px; }
+.card-preview-workspace { display: grid; gap: 18px; }
+.card-preview-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: #edf2f0; padding: 18px; }
+.card-preview-stage > div { display: grid; gap: 8px; }
+.card-preview-stage span { color: var(--muted); font-size: 12px; }
+.card-preview-stage img { width: 100%; height: auto; display: block; box-shadow: 0 12px 28px rgba(14,39,31,.15); border-radius: 10px; }
+.card-image-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.card-image-actions button { flex: 0 0 auto; }
+
+@media (max-width: 1050px) {
+  .card-inventory-layout { grid-template-columns: 1fr; }
+  .template-line { grid-template-columns: 120px minmax(0,1fr) auto; }
+  .template-line > .text-button { grid-column: 2 / -1; justify-self: start; }
+  .print-job-line { grid-template-columns: auto minmax(0,1fr) auto; }
+  .print-job-line .inline-actions { grid-column: 2 / -1; flex-wrap: wrap; }
+}
+
+@media (max-width: 720px) {
+  .template-line { grid-template-columns: 1fr; }
+  .template-swatch { height: 120px; }
+  .template-meta { justify-items: start; }
+  .template-line > .text-button { grid-column: auto; }
+  .card-preview-stage { grid-template-columns: 1fr; }
+  .surface-toolbar { align-items: flex-start; flex-direction: column; }
+  .inventory-batch-line { grid-template-columns: 1fr auto; }
+  .inventory-batch-line > .quiet-label { grid-column: 1 / -1; }
+  .print-job-line { grid-template-columns: auto minmax(0,1fr); }
+  .print-job-line > .status-pill, .print-job-line .inline-actions { grid-column: 2; }
+}

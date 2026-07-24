@@ -9,7 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  QrCode,
+  CreditCard,
   ScrollText,
   Users,
   X,
@@ -19,19 +19,19 @@ import type { SessionUser } from '@/lib/models';
 import { AuditView } from './audit-view';
 import { BranchesView } from './branches-view';
 import { OverviewView } from './overview-view';
-import { QrView } from './qr-view';
+import { SmartCardsView } from './smart-cards-view';
 import { RolesView } from './roles-view';
 import { UsersView } from './users-view';
 import { ErrorState, LoadingState } from './ui';
 
-type Tab = 'overview' | 'branches' | 'users' | 'roles' | 'qr' | 'audit';
+type Tab = 'overview' | 'branches' | 'users' | 'roles' | 'smartCards' | 'audit';
 
 const navigation = [
   { id: 'overview' as const, label: 'التشغيل اليومي', icon: LayoutDashboard, permission: 'dashboard.view' },
   { id: 'branches' as const, label: 'الفروع والخزائن', icon: Building2, permission: 'branches.view' },
   { id: 'users' as const, label: 'المستخدمون', icon: Users, permission: 'users.view' },
   { id: 'roles' as const, label: 'الأدوار والصلاحيات', icon: KeyRound, permission: 'roles.view' },
-  { id: 'qr' as const, label: 'بطاقات QR', icon: QrCode, permission: 'qr.view' },
+  { id: 'smartCards' as const, label: 'الكروت الذكية', icon: CreditCard, permission: 'smart_cards.view' },
   { id: 'audit' as const, label: 'سجل المراجعة', icon: ScrollText, permission: 'audit.view' },
 ];
 
@@ -115,7 +115,7 @@ export function WorkspaceShell() {
           {tab === 'branches' ? <BranchesView canManage={can('branches.manage')} /> : null}
           {tab === 'users' ? <UsersView canManage={can('users.manage')} /> : null}
           {tab === 'roles' ? <RolesView canManage={can('roles.manage')} /> : null}
-          {tab === 'qr' ? <QrView canManage={can('qr.manage')} /> : null}
+          {tab === 'smartCards' ? <SmartCardsView permissions={user.permissions} /> : null}
           {tab === 'audit' ? <AuditView /> : null}
         </section>
       </main>
