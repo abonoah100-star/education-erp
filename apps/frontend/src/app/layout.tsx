@@ -1,0 +1,1 @@
+import './globals.css';export const metadata={title:'EduCore ERP',description:'نظام إدارة مركز تعليمي متعدد الفروع'};export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="ar" dir="rtl"><body>{children}</body></html>}

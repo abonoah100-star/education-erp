@@ -1,21 +1,15 @@
-# Project Constitution
+# دستور المشروع
 
-## Non-negotiable rule
+## القاعدة العليا
+هذا المشروع غير قابل لأي نوع من الترقيع أو الحلول المؤقتة أو التجاوزات المخفية.
 
-This project does not accept patches, hidden workarounds, forced overrides,
-temporary production fixes, duplicated business logic, or architecture bypasses.
-
-Every defect must be resolved at its root cause.
-
-## Engineering rules
-
-1. Business logic must not be implemented inside UI components.
-2. Controllers must not access the database directly.
-3. Database changes require versioned migrations.
-4. Financial records are reversed, never silently edited or deleted.
-5. Authorization is always enforced by the backend.
-6. Every bug fix requires a regression test.
-7. Shared behavior must be implemented once.
-8. TypeScript strict mode is mandatory.
-9. Architectural decisions must be documented.
-10. Code that fails lint, type checks, tests, or builds cannot be merged.
+1. يُعالج الخطأ من سببه الجذري.
+2. منطق الأعمال داخل الـBackend فقط.
+3. Controllers لا تتصل بقاعدة البيانات مباشرة.
+4. كل تغيير بيانات بنيوي عبر Migration موثقة.
+5. الصلاحيات تُفرض من الـBackend.
+6. السجلات المالية تُعكس ولا تُحذف أو تعدل بصمت.
+7. كل إصلاح خطأ يتبعه Regression Test.
+8. TypeScript Strict إلزامي.
+9. لا `any` ولا `TODO` ولا `Fix later` داخل كود الإنتاج.
+10. لا دمج دون نجاح lint وtypecheck وtests وbuild.

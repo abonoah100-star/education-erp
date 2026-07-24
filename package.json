@@ -1,0 +1,30 @@
+{
+  "name": "education-erp",
+  "version": "1.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "quality": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "db:generate": "npm run prisma:generate -w @education-erp/backend",
+    "db:migrate": "npm run prisma:migrate -w @education-erp/backend",
+    "db:deploy": "npm run prisma:deploy -w @education-erp/backend",
+    "db:seed": "npm run prisma:seed -w @education-erp/backend"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "turbo": "2.5.6",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  }
+}

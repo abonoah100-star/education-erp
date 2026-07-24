@@ -1,0 +1,122 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+
+enum UserStatus { ACTIVE SUSPENDED }
+enum CashboxStatus { ACTIVE CLOSED }
+enum CardType { STUDENT GUARDIAN STAFF }
+
+model Organization {
+  id String @id @default(uuid())
+  name String
+  code String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branches Branch[]
+  users User[]
+  roles Role[]
+}
+model Branch {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  name String
+  code String
+  address String?
+  phone String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cashboxes Cashbox[]
+  memberships UserBranch[]
+  @@unique([organizationId,code])
+}
+model Cashbox {
+  id String @id @default(uuid())
+  branchId String
+  branch Branch @relation(fields:[branchId],references:[id],onDelete:Restrict)
+  name String
+  code String
+  balance Decimal @default(0) @db.Decimal(14,2)
+  status CashboxStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([branchId,code])
+}
+model User {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  name String
+  email String @unique
+  passwordHash String
+  status UserStatus @default(ACTIVE)
+  refreshTokenHash String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  roleLinks UserRole[]
+  branchLinks UserBranch[]
+  auditLogs AuditLog[] @relation("AuditActor")
+}
+model Role {
+  id String @id @default(uuid())
+  organizationId String
+  organization Organization @relation(fields:[organizationId],references:[id],onDelete:Restrict)
+  name String
+  code String
+  isSystem Boolean @default(false)
+  createdAt DateTime @default(now())
+  userLinks UserRole[]
+  permissionLinks RolePermission[]
+  @@unique([organizationId,code])
+}
+model Permission {
+  id String @id @default(uuid())
+  code String @unique
+  name String
+  module String
+  roleLinks RolePermission[]
+}
+model UserRole {
+  userId String
+  roleId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  role Role @relation(fields:[roleId],references:[id],onDelete:Cascade)
+  @@id([userId,roleId])
+}
+model RolePermission {
+  roleId String
+  permissionId String
+  role Role @relation(fields:[roleId],references:[id],onDelete:Cascade)
+  permission Permission @relation(fields:[permissionId],references:[id],onDelete:Cascade)
+  @@id([roleId,permissionId])
+}
+model UserBranch {
+  userId String
+  branchId String
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  branch Branch @relation(fields:[branchId],references:[id],onDelete:Cascade)
+  @@id([userId,branchId])
+}
+model AuditLog {
+  id String @id @default(uuid())
+  actorId String?
+  actor User? @relation("AuditActor",fields:[actorId],references:[id],onDelete:SetNull)
+  action String
+  entityType String
+  entityId String?
+  metadata Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  @@index([entityType,entityId])
+}
+model QrCard {
+  id String @id @default(uuid())
+  organizationId String
+  cardType CardType
+  subjectId String
+  publicCode String @unique
+  secretHash String
+  isActive Boolean @default(true)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+}
